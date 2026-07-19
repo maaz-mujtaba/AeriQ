@@ -2,12 +2,11 @@
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 pydantic==2.5.0
-pydantic_settings==2.1.0
+pydantic-settings==2.1.0
 
 # Database
 sqlalchemy==2.0.23
-sqlite3  # built-in
-psycopg2_binary==2.9.9  # for Supabase/PostgreSQL
+psycopg2-binary==2.9.9  # for Supabase/PostgreSQL
 
 # Data
 pandas==2.1.3
