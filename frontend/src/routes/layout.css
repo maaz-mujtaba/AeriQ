@@ -1,1 +1,47 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 @import 'tailwindcss';
+
+
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Smooth transitions and scrollbars */
+html {
+  font-family: var(--font-sans);
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--color-zinc-50);
+  color: var(--color-zinc-900);
+}
+
+html.dark body {
+  background-color: var(--color-zinc-950);
+  color: var(--color-zinc-50);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-zinc-200);
+  border-radius: 9999px;
+}
+html.dark ::-webkit-scrollbar-thumb {
+  background: var(--color-zinc-800);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-zinc-300);
+}
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: var(--color-zinc-700);
+}
