@@ -1,5 +1,7 @@
 import {
     currentAQI,
+    forecastData,
+    weatherHourly,
     isLoading,
     errorMessage
 } from '$lib/stores/aqiStore.js';
@@ -109,6 +111,71 @@ export async function loadCurrentAQI(latitude, longitude) {
 
         errorMessage.set(message);
         currentAQI.set(null);
+        throw error;
+    } finally {
+        isLoading.set(false);
+    }
+}
+
+/**
+ * Load forecast AQI data and update Svelte stores.
+ * @param {number} latitude
+ * @param {number} longitude
+ */
+export async function loadAQIForecast(latitude, longitude) {
+    isLoading.set(true);
+    errorMessage.set(null);
+
+    try {
+        const data = await getAQIForecast(latitude, longitude);
+        forecastData.set(data.forecast || []);
+        return data;
+    } catch (error) {
+        const message =
+            error instanceof Error
+                ? error.message
+                : 'Unable to load the air quality forecast.';
+
+        errorMessage.set(message);
+        forecastData.set([]);
+        throw error;
+    } finally {
+        isLoading.set(false);
+    }
+}
+
+/**
+ * Get weather hourly forecast.
+ * @param {number} latitude
+ * @param {number} longitude
+ */
+export async function getWeatherHourly(latitude, longitude) {
+    return apiRequest(
+        `/api/weather/hourly?latitude=${latitude}&longitude=${longitude}`
+    );
+}
+
+/**
+ * Load weather hourly data and update stores.
+ * @param {number} latitude
+ * @param {number} longitude
+ */
+export async function loadWeatherHourly(latitude, longitude) {
+    isLoading.set(true);
+    errorMessage.set(null);
+
+    try {
+        const data = await getWeatherHourly(latitude, longitude);
+        weatherHourly.set(data.hourly || []);
+        return data;
+    } catch (error) {
+        const message =
+            error instanceof Error
+                ? error.message
+                : 'Unable to load the hourly weather forecast.';
+
+        errorMessage.set(message);
+        weatherHourly.set([]);
         throw error;
     } finally {
         isLoading.set(false);
