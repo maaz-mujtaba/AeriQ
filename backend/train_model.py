@@ -1,10 +1,11 @@
 """
 ML Model Training Script for AQI Prediction
+Uses lagged pollutant values (not current PM2.5) to predict future AQI
 """
 
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
@@ -30,10 +31,10 @@ TRAIN_CITIES = [
 DAYS_BACK = 90
 
 MODEL_PARAMS = {
-    'n_estimators': 150,
-    'max_depth': 15,
-    'min_samples_split': 5,
-    'min_samples_leaf': 2,
+    'n_estimators': 200,
+    'max_depth': 20,
+    'min_samples_split': 10,
+    'min_samples_leaf': 4,
     'random_state': 42,
     'n_jobs': -1
 }
@@ -49,9 +50,7 @@ FEATURES_PATH = "./models/feature_cols.pkl"
 
 def clean_column(series):
     """Convert series to float, handling None and NaN values."""
-    # First convert any None to NaN
     series = series.replace([None], np.nan)
-    # Then convert to float (NaN stays NaN)
     return pd.to_numeric(series, errors='coerce')
 
 
@@ -60,7 +59,10 @@ def clean_column(series):
 # ============================================
 
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Engineer features for AQI prediction."""
+    """
+    Engineer features for AQI prediction.
+    Uses LAGGED pollutant values (not current) to avoid data leakage.
+    """
     df = df.copy()
     
     # Ensure timestamp is datetime
@@ -68,17 +70,13 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values('timestamp').reset_index(drop=True)
     
     # ==========================================
-    # 1. CLEAN THE DATA (FIX for NoneType error)
+    # 1. CLEAN THE DATA
     # ==========================================
-    # Clean weather columns
-    weather_cols = ['temperature', 'humidity', 'wind_speed']
-    for col in weather_cols:
+    all_cols = ['temperature', 'humidity', 'wind_speed', 'pm25', 'pm10', 'no2', 'so2', 'o3', 'co']
+    for col in all_cols:
         if col in df.columns:
             df[col] = clean_column(df[col])
-    
-    # Clean pollutant columns (if needed for AQI calculation)
-    if 'pm25' in df.columns:
-        df['pm25'] = clean_column(df['pm25'])
+            df[col] = df[col].fillna(df[col].mean())
     
     # ==========================================
     # 2. TIME-BASED FEATURES
@@ -88,76 +86,67 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     df['month'] = df['timestamp'].dt.month
     df['day_of_year'] = df['timestamp'].dt.dayofyear
     
-    # Cyclical encoding
     df['hour_sin'] = np.sin(2 * np.pi * df['hour'] / 24)
     df['hour_cos'] = np.cos(2 * np.pi * df['hour'] / 24)
     df['dow_sin'] = np.sin(2 * np.pi * df['day_of_week'] / 7)
     df['dow_cos'] = np.cos(2 * np.pi * df['day_of_week'] / 7)
     
-    # Season (0=Winter, 1=Spring, 2=Summer, 3=Fall)
     df['season'] = df['month'].map({
-        12: 0, 1: 0, 2: 0,
-        3: 1, 4: 1, 5: 1,
-        6: 2, 7: 2, 8: 2,
-        9: 3, 10: 3, 11: 3,
+        12: 0, 1: 0, 2: 0, 3: 1, 4: 1, 5: 1,
+        6: 2, 7: 2, 8: 2, 9: 3, 10: 3, 11: 3,
     }).fillna(0).astype(int)
     
     # ==========================================
-    # 3. ROLLING AVERAGES (Weather only)
+    # 3. LAGGED POLLUTANT FEATURES (PAST VALUES)
+    # ==========================================
+    # Use lagged pollutants to predict future AQI
+    pollutants = ['pm25', 'pm10', 'no2', 'so2', 'o3', 'co']
+    
+    for col in pollutants:
+        if col in df.columns:
+            # Past values at different time lags
+            for lag in [1, 3, 6, 12, 24]:  # 1h, 3h, 6h, 12h, 24h ago
+                df[f'{col}_lag_{lag}h'] = df[col].shift(lag).fillna(0)
+    
+    # ==========================================
+    # 4. ROLLING AVERAGES OF PAST POLLUTANTS
+    # ==========================================
+    for col in pollutants:
+        if col in df.columns:
+            # Rolling averages of past values
+            for window in [6, 12, 24]:
+                df[f'{col}_rolling_{window}h'] = df[col].rolling(window, min_periods=1).mean().shift(1).fillna(0)
+    
+    # ==========================================
+    # 5. WEATHER FEATURES (current + rolling)
     # ==========================================
     weather = ['temperature', 'humidity', 'wind_speed']
     
     for col in weather:
         if col in df.columns:
-            # Ensure no NaN before rolling
-            df[col] = df[col].fillna(df[col].mean())
-            
-            df[f'{col}_rolling_6h'] = df[col].rolling(window=6, min_periods=1).mean()
-            df[f'{col}_rolling_12h'] = df[col].rolling(window=12, min_periods=1).mean()
-            df[f'{col}_rolling_24h'] = df[col].rolling(window=24, min_periods=1).mean()
+            df[f'{col}_rolling_6h'] = df[col].rolling(6, min_periods=1).mean().shift(1).fillna(0)
+            df[f'{col}_rolling_12h'] = df[col].rolling(12, min_periods=1).mean().shift(1).fillna(0)
+            df[f'{col}_rolling_24h'] = df[col].rolling(24, min_periods=1).mean().shift(1).fillna(0)
     
     # ==========================================
-    # 4. WEATHER LAG FEATURES
+    # 6. TARGET: AQI (from PM2.5)
     # ==========================================
-    for col in weather:
-        if col in df.columns:
-            for lag in [1, 3, 6, 12, 24]:
-                df[f'{col}_lag_{lag}h'] = df[col].shift(lag).fillna(0)
+    df['aqi'] = df['pm25'].apply(calculate_aqi_from_pm25)
     
     # ==========================================
-    # 5. WEATHER DIFFERENCES
-    # ==========================================
-    for col in weather:
-        if col in df.columns:
-            # Convert to numeric first, then diff
-            df[f'{col}_diff_1h'] = df[col].diff().fillna(0)
-            df[f'{col}_diff_3h'] = df[col].diff(3).fillna(0)
-            df[f'{col}_diff_6h'] = df[col].diff(6).fillna(0)
-    
-    # ==========================================
-    # 6. INTERACTION FEATURES
-    # ==========================================
-    if 'temperature' in df.columns and 'humidity' in df.columns:
-        df['temp_humidity'] = df['temperature'] * df['humidity']
-    
-    if 'wind_speed' in df.columns and 'temperature' in df.columns:
-        # Avoid division by zero
-        df['wind_temp_ratio'] = df['wind_speed'] / (df['temperature'] + 0.1)
-    
-    # ==========================================
-    # 7. TARGET: AQI (from PM2.5)
-    # ==========================================
-    if 'pm25' in df.columns:
-        # Handle NaN in PM2.5 before AQI calculation
-        df['pm25'] = df['pm25'].fillna(0)
-        df['aqi'] = df['pm25'].apply(calculate_aqi_from_pm25)
-    
-    # ==========================================
-    # 8. DROP ROWS WITH NaN TARGET
+    # 7. DROP ROWS WITH NaN TARGET
     # ==========================================
     df = df.dropna(subset=['aqi'])
     
-    # Fill any remaining NaN values with 0
+    # ==========================================
+    # 8. REMOVE CURRENT PM2.5 (to prevent cheating)
+    # ==========================================
+    # We remove current PM2.5 since AQI is calculated from it
+    # This forces the model to use lagged values instead
+    if 'pm25' in df.columns:
+        df = df.drop(columns=['pm25'])
+    
+    # Fill any remaining NaN values
     df = df.fillna(0)
     
     return df
@@ -224,48 +213,9 @@ def train_model(df: pd.DataFrame):
     print("🤖 TRAINING MODEL")
     print("=" * 60)
     
-    # ==========================================
-    # 1. Define features (NO PM2.5!)
-    # ==========================================
-    feature_cols = [
-        # Weather only (NO pollutants!)
-        'temperature', 'humidity', 'wind_speed',
-        # Time features
-        'hour_sin', 'hour_cos', 'dow_sin', 'dow_cos', 'season',
-    ]
-    
-    # Weather rolling averages
-    for col in ['temperature', 'humidity', 'wind_speed']:
-        if col in df.columns:
-            for window in [6, 12, 24]:
-                feature_name = f'{col}_rolling_{window}h'
-                if feature_name in df.columns:
-                    feature_cols.append(feature_name)
-    
-    # Weather lag features
-    for col in ['temperature', 'humidity', 'wind_speed']:
-        if col in df.columns:
-            for lag in [1, 3, 6, 12, 24]:
-                feature_name = f'{col}_lag_{lag}h'
-                if feature_name in df.columns:
-                    feature_cols.append(feature_name)
-    
-    # Weather differences
-    for col in ['temperature', 'humidity', 'wind_speed']:
-        if col in df.columns:
-            for diff in [1, 3, 6]:
-                feature_name = f'{col}_diff_{diff}h'
-                if feature_name in df.columns:
-                    feature_cols.append(feature_name)
-    
-    # Interactions
-    if 'temp_humidity' in df.columns:
-        feature_cols.append('temp_humidity')
-    if 'wind_temp_ratio' in df.columns:
-        feature_cols.append('wind_temp_ratio')
-    
-    # Keep only existing columns
-    feature_cols = [col for col in feature_cols if col in df.columns]
+    # Define features (all except target and identifiers)
+    exclude_cols = ['timestamp', 'city', 'aqi', 'hour', 'day_of_week', 'month', 'day_of_year']
+    feature_cols = [col for col in df.columns if col not in exclude_cols]
     
     X = df[feature_cols]
     y = df['aqi']
@@ -274,37 +224,25 @@ def train_model(df: pd.DataFrame):
     print(f"   Training samples: {len(X)}")
     print(f"   Target range: {y.min():.0f} - {y.max():.0f}")
     
-    # ==========================================
-    # 2. Split data
-    # ==========================================
+    # Split data
     split_idx = int(len(X) * 0.8)
-    
-    X_train = X[:split_idx]
-    y_train = y[:split_idx]
-    X_test = X[split_idx:]
-    y_test = y[split_idx:]
+    X_train, X_test = X[:split_idx], X[split_idx:]
+    y_train, y_test = y[:split_idx], y[split_idx:]
     
     print(f"\n📅 Training data: {len(X_train)} samples")
     print(f"   Test data: {len(X_test)} samples")
     
-    # ==========================================
-    # 3. Scale features
-    # ==========================================
+    # Scale features
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     
-    # ==========================================
-    # 4. Train model
-    # ==========================================
+    # Train model
     print("\n🚀 Training Random Forest model...")
-    
     model = RandomForestRegressor(**MODEL_PARAMS)
     model.fit(X_train_scaled, y_train)
     
-    # ==========================================
-    # 5. Evaluate
-    # ==========================================
+    # Evaluate
     y_pred_train = model.predict(X_train_scaled)
     y_pred_test = model.predict(X_test_scaled)
     
@@ -327,9 +265,7 @@ def train_model(df: pd.DataFrame):
     print(f"      MAE:  {test_mae:.2f}")
     print(f"      R²:   {test_r2:.4f}")
     
-    # ==========================================
-    # 6. Feature Importance
-    # ==========================================
+    # Feature importance
     importance = pd.DataFrame({
         'feature': feature_cols,
         'importance': model.feature_importances_
@@ -340,9 +276,7 @@ def train_model(df: pd.DataFrame):
     for _, row in importance.head(15).iterrows():
         print(f"   {row['feature']:30s}: {row['importance']:.4f}")
     
-    # ==========================================
-    # 7. Save model
-    # ==========================================
+    # Save model
     os.makedirs('./models', exist_ok=True)
     
     joblib.dump(model, MODEL_PATH)
@@ -353,9 +287,7 @@ def train_model(df: pd.DataFrame):
     print(f"✅ Scaler saved to {SCALER_PATH}")
     print(f"✅ Features saved to {FEATURES_PATH}")
     
-    # ==========================================
-    # 8. Save training summary
-    # ==========================================
+    # Save summary
     summary = {
         'model_type': 'RandomForestRegressor',
         'train_date': datetime.now().isoformat(),
