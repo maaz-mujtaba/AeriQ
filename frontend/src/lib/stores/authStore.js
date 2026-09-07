@@ -26,3 +26,26 @@ export function logout() {
 	}
 	loggedIn.set(false);
 }
+
+export const protectedRoutes = [
+	'/forecast',
+	'/alerts',
+	'/map',
+	'/aqi-map',
+	'/health',
+	'/saved',
+	'/saved-cities',
+	'/reports'
+];
+
+/**
+ * Checks if a given pathname belongs to protected routes.
+ * @param {string} pathname
+ * @returns {boolean}
+ */
+export function isProtectedPath(pathname) {
+	const normalized = pathname.replace(/\/$/, '') || '/';
+	return protectedRoutes.some(
+		(route) => normalized === route || normalized.startsWith(route + '/')
+	);
+}
