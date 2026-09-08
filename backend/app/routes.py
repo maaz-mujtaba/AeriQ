@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException, Depends, status, Query
+# app/routes.py
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import Optional, List
 from datetime import datetime
+from sqlalchemy.orm import Session
 
 from app.models import (
     CityRequest, AQIResponse, get_aqi_category,
@@ -15,15 +17,31 @@ from app.cities import (
 )
 from app.openmeteo import fetch_air_quality, calculate_aqi_from_pm25
 from app.ml_model import predict_aqi
-from app.auth import (
-    create_user, authenticate_user, create_access_token,
-    get_current_user, get_user_response, get_user_by_email,
-    _users_db
-)
-from app.health_risk import calculate_health_risk, get_default_threshold
 
 # ============================================
-# CREATE ROUTER (THIS WAS MISSING!)
+# IMPORT FROM CRUD AND AUTH (FIXED)
+# ============================================
+from app.crud import (
+    create_user,
+    get_user_by_email,
+    get_user_by_id,
+    update_user,
+    delete_user,
+    get_users
+)
+from app.auth import (
+    authenticate_user,
+    create_access_token,
+    get_current_user,
+    get_current_active_user,
+    verify_password,
+    get_password_hash
+)
+from app.health_risk import calculate_health_risk, get_default_threshold
+from app.database import get_db
+
+# ============================================
+# CREATE ROUTER
 # ============================================
 
 router = APIRouter()
@@ -164,86 +182,116 @@ async def reload_cities():
 
 
 # ============================================
-# NEW: AUTH ROUTES
+# USER AUTH ROUTES (UPDATED WITH DATABASE)
 # ============================================
 
-@router.post("/auth/register", response_model=TokenResponse)
-async def register_user(user_data: UserCreate):
+@router.post("/auth/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+async def register_user(
+    user_data: UserCreate,
+    db: Session = Depends(get_db)
+):
     """
     Register a new user.
     Returns JWT token and user data.
     """
-    user = create_user(user_data)
-    access_token = create_access_token({"sub": user["email"]})
+    # Check if user exists
+    if get_user_by_email(db, user_data.email):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+    
+    # Create user
+    user = create_user(db, user_data)
+    
+    # Create access token
+    access_token = create_access_token({"sub": user.email})
     
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
-        user=UserResponse(**get_user_response(user))
+        user=user
     )
 
 
 @router.post("/auth/login", response_model=TokenResponse)
-async def login_user(login_data: UserLogin):
+async def login_user(
+    login_data: UserLogin,
+    db: Session = Depends(get_db)
+):
     """
     Login a user.
     Returns JWT token and user data.
     """
-    user = authenticate_user(login_data.email, login_data.password)
+    user = authenticate_user(db, login_data.email, login_data.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
         )
     
-    access_token = create_access_token({"sub": user["email"]})
+    # Create access token
+    access_token = create_access_token({"sub": user.email})
     
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
-        user=UserResponse(**get_user_response(user))
+        user=user
     )
 
 
 @router.get("/auth/me", response_model=UserResponse)
-async def get_me(current_user: dict = Depends(get_current_user)):
+async def get_current_user_profile(
+    current_user = Depends(get_current_active_user)
+):
     """
     Get current user profile.
     Requires authentication.
     """
-    return UserResponse(**get_user_response(current_user))
+    return current_user
 
 
 @router.put("/auth/me", response_model=UserResponse)
-async def update_me(
-    update_data: dict,
-    current_user: dict = Depends(get_current_user)
+async def update_current_user(
+    user_data: dict,
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
 ):
     """
     Update current user profile.
     Requires authentication.
     """
-    for key, value in update_data.items():
-        if value is not None and key in current_user:
-            if key == "vulnerabilities":
-                current_user[key] = [v.value if hasattr(v, 'value') else v for v in value]
-            else:
-                current_user[key] = value
-    
-    current_user["updated_at"] = datetime.now()
-    _users_db[current_user["email"]] = current_user
-    
-    return UserResponse(**get_user_response(current_user))
+    from app.schemas import UserUpdate
+    update_data = UserUpdate(**user_data)
+    updated_user = update_user(db, current_user.id, update_data)
+    if not updated_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return updated_user
+
+
+@router.delete("/auth/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_current_user(
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete current user.
+    Requires authentication.
+    """
+    success = delete_user(db, current_user.id)
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found")
+    return None
 
 
 # ============================================
-# NEW: HEALTH RISK ROUTES
+# HEALTH RISK ROUTES
 # ============================================
 
 @router.post("/health/assess", response_model=HealthRiskResponse)
 async def assess_city_health(
     request: CityHealthRequest,
-    current_user: dict = Depends(get_current_user)
+    current_user = Depends(get_current_user)
 ):
     """
     Assess health risk for a city based on user's health profile.
@@ -360,7 +408,7 @@ async def assess_city_health(
 
 
 @router.get("/health/my-threshold")
-async def get_my_threshold(current_user: dict = Depends(get_current_user)):
+async def get_my_threshold(current_user = Depends(get_current_user)):
     """
     Get the user's alert threshold based on their vulnerabilities.
     """
@@ -380,7 +428,7 @@ async def get_my_threshold(current_user: dict = Depends(get_current_user)):
 async def compare_cities(
     city1: str,
     city2: str,
-    current_user: dict = Depends(get_current_user)
+    current_user = Depends(get_current_user)
 ):
     """
     Compare AQI between two cities.
