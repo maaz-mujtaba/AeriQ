@@ -8,7 +8,7 @@ import {
 
 // Base URL of the AeriQ FastAPI backend
 const API_BASE_URL =
-    import.meta.env.PUBLIC_API_BASE_URL || 'http://localhost:8000';
+    import.meta.env.PUBLIC_API_BASE_URL || 'https://aeriq-backend.onrender.com/api';
 
 // Reusable function for making API requests
 
