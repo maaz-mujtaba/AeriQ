@@ -1220,7 +1220,7 @@
                 <form
                     class="form active"
                     id="loginForm"
-                    onsubmit="loginUser(event)"
+                    onsubmit={loginUser}
                 >
 
                     <!-- EMAIL -->
@@ -1346,7 +1346,7 @@
                 <form
                     class="form"
                     id="registerForm"
-                    onsubmit="registerUser(event)"
+                    onsubmit={registerUser}
                 >
 
                     <!-- FIRST NAME + LAST NAME -->
@@ -1634,7 +1634,7 @@
                             <select
                                 id="hasDisease"
                                 required
-                                onchange="handleHealthChange()"
+                                onchange={handleHealthChange}
                             >
 
                                 <option value="">
@@ -1736,7 +1736,7 @@
                                 id="registerPassword"
                                 placeholder="Create a strong password"
                                 required
-                                oninput="checkPasswordStrength()"
+                                oninput={checkPasswordStrength}
                             >
 
 
