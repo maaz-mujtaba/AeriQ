@@ -1196,7 +1196,7 @@
                     <button
                         class="tab active"
                         id="loginTab"
-                        onclick="showLogin()"
+                        onclick={showLogin}
                     >
                         Sign In
                     </button>
@@ -1205,7 +1205,7 @@
                     <button
                         class="tab"
                         id="registerTab"
-                        onclick="showRegister()"
+                        onclick={showRegister}
                     >
                         Create Account
                     </button>
@@ -1265,10 +1265,7 @@
                             <button
                                 type="button"
                                 class="eye-btn"
-                                onclick="togglePassword(
-                                    'loginPassword',
-                                    this
-                                )"
+                                onclick={(event) => togglePassword('loginPassword', event.currentTarget)}
                             >
                                 👁
                             </button>
@@ -1299,7 +1296,7 @@
                         <a
                             href="#"
                             class="forgot"
-                            onclick="forgotPassword(event)"
+                            onclick={forgotPassword}
                         >
                             Forgot password?
                         </a>
@@ -1329,7 +1326,7 @@
                     <button
                         type="button"
                         class="google-btn"
-                        onclick="googleLogin()"
+                        onclick={googleLogin}
                     >
                         Continue with Google
                     </button>
@@ -1746,10 +1743,7 @@
                             <button
                                 type="button"
                                 class="eye-btn"
-                                onclick="togglePassword(
-                                    'registerPassword',
-                                    this
-                                )"
+                                onclick={(event) => togglePassword('registerPassword', event.currentTarget)}
                             >
                                 👁
                             </button>
@@ -1802,10 +1796,7 @@
                             <button
                                 type="button"
                                 class="eye-btn"
-                                onclick="togglePassword(
-                                    'confirmPassword',
-                                    this
-                                )"
+                                onclick={(event) => togglePassword('confirmPassword', event.currentTarget)}
                             >
                                 👁
                             </button>
