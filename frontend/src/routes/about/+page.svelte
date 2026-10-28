@@ -1,5 +1,5 @@
 <script>
-	let activeSection = 'overview';
+	let activeSection = $state('overview');
 
 	const features = [
 		{
@@ -131,7 +131,7 @@
 	>
 		<button
 			class:active-tab={activeSection === 'overview'}
-			on:click={() => setSection('overview')}
+			onclick={() => setSection('overview')}
 			class="rounded-xl px-4 py-2 text-sm font-semibold transition-all hover:bg-zinc-100 dark:hover:bg-zinc-900"
 		>
 			Overview
@@ -139,7 +139,7 @@
 
 		<button
 			class:active-tab={activeSection === 'features'}
-			on:click={() => setSection('features')}
+			onclick={() => setSection('features')}
 			class="rounded-xl px-4 py-2 text-sm font-semibold transition-all hover:bg-zinc-100 dark:hover:bg-zinc-900"
 		>
 			Features
@@ -147,7 +147,7 @@
 
 		<button
 			class:active-tab={activeSection === 'workflow'}
-			on:click={() => setSection('workflow')}
+			onclick={() => setSection('workflow')}
 			class="rounded-xl px-4 py-2 text-sm font-semibold transition-all hover:bg-zinc-100 dark:hover:bg-zinc-900"
 		>
 			How It Works
@@ -155,7 +155,7 @@
 
 		<button
 			class:active-tab={activeSection === 'technology'}
-			on:click={() => setSection('technology')}
+			onclick={() => setSection('technology')}
 			class="rounded-xl px-4 py-2 text-sm font-semibold transition-all hover:bg-zinc-100 dark:hover:bg-zinc-900"
 		>
 			Technology
@@ -201,14 +201,14 @@
 
 					<div class="mt-7 flex flex-wrap gap-3">
 						<button
-							on:click={() => setSection('features')}
+							onclick={() => setSection('features')}
 							class="rounded-xl bg-emerald-500 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 transition-all hover:-translate-y-0.5 hover:bg-emerald-600"
 						>
 							Explore Features
 						</button>
 
 						<button
-							on:click={() => setSection('workflow')}
+							onclick={() => setSection('workflow')}
 							class="rounded-xl border border-zinc-300 bg-white px-5 py-3 text-sm font-bold text-zinc-800 transition-all hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
 						>
 							How AeriQ Works

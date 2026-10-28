@@ -1,5 +1,7 @@
 <script>
-	import { loggedIn, login, logout } from '$lib/stores/authStore.js';
+	import { onMount } from 'svelte';
+	import { loggedIn, logout } from '$lib/stores/authStore.js';
+	import { getCities, serverWaking } from '$lib/api.js';
 	import { goto } from '$app/navigation';
 
 	// Props using Svelte 5 bindable runes
@@ -13,20 +15,19 @@
 	let isNotificationOpen = $state(false);
 	let isUserDropdownOpen = $state(false);
 	let currentCity = $state('New Delhi, India');
+	let cities = $state([]);
+	let citySearch = $state('');
+	let cityLoadError = $state('');
+	let user = $state(null);
+	let visibleCities = $derived(cities.filter((city) => `${city.name} ${city.state}`.toLowerCase().includes(citySearch.toLowerCase())).slice(0, 30));
 
-	const mockCities = [
-		'New Delhi, India',
-		'New York, USA',
-		'London, UK',
-		'Tokyo, Japan',
-		'Sydney, Australia'
-	];
-
-	const mockNotifications = [
-		{ id: 1, text: 'AQI in New Delhi has reached 185 (Unhealthy)', time: '10m ago', type: 'warning' },
-		{ id: 2, text: 'Weekly air quality report is ready to download', time: '1h ago', type: 'info' },
-		{ id: 3, text: 'Alert: High ozone levels forecast for tomorrow', time: '5h ago', type: 'alert' }
-	];
+	onMount(async () => {
+		try { cities = (await getCities()).cities || []; }
+		catch (error) { cityLoadError = error.message; }
+		try { user = JSON.parse(localStorage.getItem('user') || 'null'); } catch { user = null; }
+		const savedCity = localStorage.getItem('selectedCity');
+		if (savedCity) { try { const city = JSON.parse(savedCity); currentCity = `${city.name}, ${city.state}`; } catch { /* ignore invalid cache */ } }
+	});
 
 	/**
 	 * @param {MouseEvent} e
@@ -62,7 +63,9 @@
 	 * @param {string} city
 	 */
 	function selectCity(city) {
-		currentCity = city;
+		currentCity = `${city.name}, ${city.state}`;
+		localStorage.setItem('selectedCity', JSON.stringify(city));
+		window.dispatchEvent(new CustomEvent('aeriq:city-selected', { detail: city }));
 		isCityDropdownOpen = false;
 	}
 
@@ -73,7 +76,7 @@
 	}
 
 	function handleSignIn() {
-		login();
+		goto('/settings');
 	}
 
 	function handleLogout() {
@@ -129,6 +132,7 @@
 
 	<!-- Right: Actions -->
 	<div class="flex items-center gap-2 sm:gap-3.5">
+		{#if $serverWaking}<span class="hidden lg:block text-xs text-amber-600 dark:text-amber-400" role="status">Waking up server...</span>{/if}
 		<!-- Current City Dropdown -->
 		<div class="relative">
 			<button
@@ -151,19 +155,21 @@
 					<div class="px-3 py-2 border-b border-zinc-100 dark:border-zinc-800/80">
 						<p class="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">Select Location</p>
 					</div>
-					{#each mockCities as city}
+					<div class="px-3 py-2"><input aria-label="Search cities" placeholder="Search cities..." bind:value={citySearch} class="w-full rounded-lg border border-zinc-200 bg-transparent px-2 py-1 text-xs dark:border-zinc-700" /></div>
+					{#each visibleCities as city (city.id)}
 						<button
 							onclick={() => selectCity(city)}
 							class="w-full text-left px-3.5 py-2.5 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-zinc-100 flex items-center justify-between transition-colors"
 						>
-							<span>{city}</span>
-							{#if currentCity === city}
+							<span>{city.name}, {city.state}</span>
+							{#if currentCity === `${city.name}, ${city.state}`}
 								<svg class="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
 									<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
 								</svg>
 							{/if}
 						</button>
 					{/each}
+					{#if !visibleCities.length}<p class="px-3 py-2 text-xs text-zinc-500">{cityLoadError || 'No matching cities found.'}</p>{/if}
 				</div>
 			{/if}
 		</div>
@@ -188,29 +194,10 @@
 				<div class="absolute right-0 mt-2 w-72 sm:w-80 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-xl shadow-lg shadow-zinc-200/50 dark:shadow-black/40 overflow-hidden py-1 z-40">
 					<div class="px-4 py-2.5 border-b border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between">
 						<span class="text-xs font-bold text-zinc-800 dark:text-zinc-200">Notifications</span>
-						<button class="text-[10px] font-semibold text-emerald-500 hover:text-emerald-600">Mark all read</button>
+						<span class="text-[10px] text-zinc-400">Live alerts</span>
 					</div>
 					<div class="divide-y divide-zinc-100 dark:divide-zinc-800/50 max-h-64 overflow-y-auto">
-						{#each mockNotifications as alert}
-							<div class="p-3.5 hover:bg-zinc-50 dark:hover:bg-zinc-800/40 transition-colors">
-								<div class="flex items-start gap-2.5">
-									<!-- Warning/Alert Indicator -->
-									<div class="mt-0.5 shrink-0">
-										{#if alert.type === 'warning'}
-											<span class="flex h-2 w-2 rounded-full bg-amber-500"></span>
-										{:else if alert.type === 'alert'}
-											<span class="flex h-2 w-2 rounded-full bg-rose-500"></span>
-										{:else}
-											<span class="flex h-2 w-2 rounded-full bg-blue-500"></span>
-										{/if}
-									</div>
-									<div class="flex-1 space-y-0.5">
-										<p class="text-xs text-zinc-700 dark:text-zinc-300 leading-normal">{alert.text}</p>
-										<p class="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium">{alert.time}</p>
-									</div>
-								</div>
-							</div>
-						{/each}
+						<p class="p-4 text-xs text-zinc-500">No new alerts.</p>
 					</div>
 				</div>
 			{/if}
@@ -231,8 +218,8 @@
 				{#if isUserDropdownOpen}
 					<div class="absolute right-0 mt-2 w-52 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-xl shadow-lg shadow-zinc-200/50 dark:shadow-black/40 overflow-hidden py-1.5 z-40">
 						<div class="px-3.5 py-2 border-b border-zinc-100 dark:border-zinc-800/80">
-							<p class="text-xs font-bold text-zinc-900 dark:text-zinc-100">AeriQ User</p>
-							<p class="text-[10px] text-zinc-400 dark:text-zinc-500 truncate">user@aeriq.com</p>
+							<p class="text-xs font-bold text-zinc-900 dark:text-zinc-100">{user?.name || 'AeriQ User'}</p>
+							<p class="text-[10px] text-zinc-400 dark:text-zinc-500 truncate">{user?.email || ''}</p>
 						</div>
 						<div class="py-1">
 							<a href="/settings" onclick={closeAllDropdowns} class="flex items-center gap-2 px-3.5 py-2 text-sm text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">

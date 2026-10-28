@@ -3,16 +3,19 @@ import { writable } from 'svelte/store';
 const isBrowser = typeof window !== 'undefined';
 
 // Fetch initial state from localStorage if browser matches, else default to false
-const initialStatus = isBrowser ? localStorage.getItem('isLoggedIn') === 'true' : false;
+const initialStatus = isBrowser ? Boolean(localStorage.getItem('accessToken')) : false;
 
 export const loggedIn = writable(initialStatus);
+export const hasSession = () => isBrowser && Boolean(localStorage.getItem('accessToken'));
 
 /**
  * Simulates a successful login
  */
-export function login() {
+export function login(session) {
 	if (isBrowser) {
-		localStorage.setItem('isLoggedIn', 'true');
+		if (!session?.access_token) throw new Error('The server did not return an access token.');
+		localStorage.setItem('accessToken', session.access_token);
+		localStorage.setItem('user', JSON.stringify(session.user));
 	}
 	loggedIn.set(true);
 }
@@ -22,6 +25,8 @@ export function login() {
  */
 export function logout() {
 	if (isBrowser) {
+		localStorage.removeItem('accessToken');
+		localStorage.removeItem('user');
 		localStorage.removeItem('isLoggedIn');
 	}
 	loggedIn.set(false);

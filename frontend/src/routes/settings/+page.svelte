@@ -1,6 +1,9 @@
 <script>
-    import { loggedIn, login } from '$lib/stores/authStore.js';
+    import { login } from '$lib/stores/authStore.js';
     import { goto } from '$app/navigation';
+    import { signIn, signUp } from '$lib/api.js';
+    let authError = '';
+    let authBusy = false;
 
 /* =========================
        TAB SWITCHING
@@ -190,7 +193,7 @@
        LOGIN
     ========================== */
 
-    function loginUser(event) {
+    async function loginUser(event) {
     event.preventDefault();
 
     const email = document.getElementById("loginEmail").value.trim();
@@ -201,13 +204,16 @@
         return;
     }
 
-    login();
-
-    showToast("Welcome back! Login successful.");
-
-    setTimeout(() => {
-        goto("/");
-    }, 500);
+    authError = '';
+    authBusy = true;
+    try {
+        const session = await signIn({ email, password });
+        login(session);
+        showToast('Welcome back! Login successful.');
+        await goto('/dashboard');
+    } catch (error) {
+        authError = error.message || 'Unable to sign in. Please try again.';
+    } finally { authBusy = false; }
 }
 
 
@@ -215,7 +221,7 @@
        REGISTER
     ========================== */
 
-    function registerUser(event) {
+    async function registerUser(event) {
 
         event.preventDefault();
 
@@ -282,15 +288,26 @@
         }
 
 
-                login();
-
-        showToast(
-            "AeriQ account created successfully!"
-        );
-
-        setTimeout(() => {
-            goto("/");
-        }, 800);
+        const birthDate = new Date(document.getElementById('dob').value);
+        const age = Math.floor((Date.now() - birthDate.getTime()) / 31557600000);
+        const city = document.getElementById('city').value.trim();
+        const country = document.getElementById('country').value;
+        const vulnerabilities = healthAnswer === 'no' ? ['none'] : ['respiratory'];
+        authError = '';
+        authBusy = true;
+        try {
+            const session = await signUp({
+                name: `${document.getElementById('firstName').value.trim()} ${document.getElementById('lastName').value.trim()}`,
+                email: document.getElementById('registerEmail').value.trim(), password,
+                age, gender: document.getElementById('gender').value === 'prefer-not' ? 'prefer_not_to_say' : document.getElementById('gender').value,
+                city: country === 'India' ? city : `${city}, ${country}`, vulnerabilities
+            });
+            login(session);
+            showToast('AeriQ account created successfully!');
+            await goto('/dashboard');
+        } catch (error) {
+            authError = error.message || 'Unable to create your account. Please try again.';
+        } finally { authBusy = false; }
     }
 
 
@@ -449,6 +466,8 @@
                     onsubmit={loginUser}
                 >
 
+                    {#if authError}<p role="alert">{authError}</p>{/if}
+
                     <div class="form-group">
 
                         <label>
@@ -515,8 +534,8 @@
                     </div>
 
 
-                    <button class="submit-btn" type="submit">
-                        Sign In
+                    <button class="submit-btn" type="submit" disabled={authBusy}>
+                        {authBusy ? 'Signing in...' : 'Sign In'}
                     </button>
 
 
@@ -550,6 +569,8 @@
                     id="registerForm"
                     onsubmit={registerUser}
                 >
+
+                    {#if authError}<p role="alert">{authError}</p>{/if}
 
                     <!-- NAME -->
 
@@ -1003,8 +1024,9 @@
                     <button
                         type="submit"
                         class="submit-btn"
+                        disabled={authBusy}
                     >
-                        Create AeriQ Account
+                        {authBusy ? 'Creating account...' : 'Create AeriQ Account'}
                     </button>
 
 

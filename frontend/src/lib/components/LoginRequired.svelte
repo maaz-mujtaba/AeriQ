@@ -1,5 +1,5 @@
 <script>
-	import { login } from '$lib/stores/authStore.js';
+	import { goto } from '$app/navigation';
 
 	// Props using Svelte 5 runes
 	let {
@@ -84,7 +84,7 @@
 			<div class="flex flex-col items-center gap-3 mt-2">
 				<button
 					type="button"
-					onclick={login}
+					onclick={() => goto('/settings')}
 					class="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-500/10 focus:outline-none transition-all flex items-center gap-1.5"
 				>
 					<svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
@@ -122,7 +122,7 @@
 			<div class="flex flex-col items-center gap-3 mt-2">
 				<button
 					type="button"
-					onclick={login}
+					onclick={() => goto('/settings')}
 					class="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-500/10 focus:outline-none transition-all flex items-center gap-1.5"
 				>
 					<svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">

@@ -5,10 +5,11 @@ import {
     isLoading,
     errorMessage
 } from '$lib/stores/aqiStore.js';
+import { writable } from 'svelte/store';
 
-// Base URL of the AeriQ FastAPI backend
-const API_BASE_URL =
-    import.meta.env.PUBLIC_API_BASE_URL || 'https://aeriq-backend.onrender.com/api';
+// Configure PUBLIC_API_BASE_URL as https://aeriq-backend.onrender.com/api.
+const API_BASE_URL = (import.meta.env.PUBLIC_API_BASE_URL || 'https://aeriq-backend.onrender.com/api').replace(/\/+$/, '');
+export const serverWaking = writable(false);
 
 // Reusable function for making API requests
 
@@ -19,27 +20,50 @@ const API_BASE_URL =
  * @returns {Promise<any>}
  */
 async function apiRequest(endpoint, options = {}) {
+    const normalizedPath = endpoint.startsWith('/api/') ? endpoint.slice(4) : endpoint;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 75000);
+    const startedAt = Date.now();
+    const wakeTimer = setTimeout(() => serverWaking.set(true), 2500);
     try {
-        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        const token = typeof localStorage !== 'undefined' ? localStorage.getItem('accessToken') : null;
+        const response = await fetch(`${API_BASE_URL}${normalizedPath}`, {
+            ...options,
+            signal: options.signal || controller.signal,
             headers: {
                 'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
                 ...options.headers
-            },
-            ...options
+            }
         });
 
         if (!response.ok) {
-            throw new Error(
-                `API request failed: ${response.status} ${response.statusText}`
-            );
+            const payload = await response.json().catch(() => null);
+            const detail = payload?.detail;
+            throw new Error(typeof detail === 'string' ? detail : detail?.error || `Request failed (${response.status})`);
         }
-
+        if (response.status === 204) return null;
         return await response.json();
     } catch (error) {
         console.error(`AeriQ API error at ${endpoint}:`, error);
+        if (error?.name === 'AbortError') throw new Error('The server took too long to respond. Please try again.');
+        if (error instanceof TypeError) throw new Error('Cannot reach the AeriQ server. Check your connection and try again.');
         throw error;
+    } finally {
+        clearTimeout(timeout);
+        clearTimeout(wakeTimer);
+        serverWaking.set(false);
     }
 }
+
+export const api = { request: apiRequest };
+export const signIn = (credentials) => apiRequest('/auth/login', { method: 'POST', body: JSON.stringify(credentials) });
+export const signUp = (profile) => apiRequest('/auth/register', { method: 'POST', body: JSON.stringify(profile) });
+export const predictCityAQI = (city) => apiRequest(`/predict/${encodeURIComponent(city)}`);
+export const getCities = () => apiRequest('/cities?limit=250');
+export const getCurrentUser = () => apiRequest('/auth/me');
+export const assessHealthRisk = (city) => apiRequest('/health/assess', { method: 'POST', body: JSON.stringify({ city }) });
+export const compareCities = (city1, city2) => apiRequest(`/compare/${encodeURIComponent(city1)}/${encodeURIComponent(city2)}`);
 
 /**
  * Get the current AQI for a location.
@@ -48,7 +72,7 @@ async function apiRequest(endpoint, options = {}) {
  */
 export async function getCurrentAQI(latitude, longitude) {
     return apiRequest(
-        `/api/aqi/current?latitude=${latitude}&longitude=${longitude}`
+        `/aqi/current?latitude=${latitude}&longitude=${longitude}`
     );
 }
 
@@ -59,7 +83,7 @@ export async function getCurrentAQI(latitude, longitude) {
  */
 export async function getAQIForecast(latitude, longitude) {
     return apiRequest(
-        `/api/aqi/forecast?latitude=${latitude}&longitude=${longitude}`
+        `/aqi/forecast?latitude=${latitude}&longitude=${longitude}`
     );
 }
 
@@ -70,7 +94,7 @@ export async function getAQIForecast(latitude, longitude) {
  */
 export async function getAQIHistory(latitude, longitude) {
     return apiRequest(
-        `/api/aqi/history?latitude=${latitude}&longitude=${longitude}`
+        `/aqi/history?latitude=${latitude}&longitude=${longitude}`
     );
 }
 
@@ -84,7 +108,7 @@ export async function getAQIHistory(latitude, longitude) {
  * }} subscriptionData
  */
 export async function subscribeToAlerts(subscriptionData) {
-    return apiRequest('/api/alerts/subscribe', {
+    return apiRequest('/alerts/subscribe', {
         method: 'POST',
         body: JSON.stringify(subscriptionData)
     });
@@ -151,7 +175,7 @@ export async function loadAQIForecast(latitude, longitude) {
  */
 export async function getWeatherHourly(latitude, longitude) {
     return apiRequest(
-        `/api/weather/hourly?latitude=${latitude}&longitude=${longitude}`
+        `/weather/hourly?latitude=${latitude}&longitude=${longitude}`
     );
 }
 

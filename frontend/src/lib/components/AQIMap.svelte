@@ -1,6 +1,7 @@
 <script>
 	import { onMount, onDestroy } from 'svelte';
-	import { aqiMockData, aqiCategories, getAqiColor, getAqiCategory } from '$lib/data/aqiMockData.js';
+	import { aqiCategories, getAqiColor, getAqiCategory } from '$lib/data/aqiMockData.js';
+	import { getCities, predictCityAQI } from '$lib/api.js';
 
 	let mapContainer;
 	let map = null;
@@ -9,6 +10,9 @@
 	let selectedCity = $state(null);
 	let searchError = $state('');
 	let isLegendOpen = $state(true);
+	let aqiMockData = $state([]);
+	let loading = $state(true);
+	let dataError = $state('');
 
 	// Leaflet instance (loaded dynamically to avoid SSR issues)
 	let L = null;
@@ -28,6 +32,7 @@
 		await new Promise((r) => setTimeout(r, 100));
 
 		initMap();
+		loadCityReadings();
 	});
 
 	onDestroy(() => {
@@ -52,9 +57,8 @@
 		L.control.zoom({ position: 'bottomright' }).addTo(map);
 
 		// Add tile layer (CartoDB Positron for clean look)
-		L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-			attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-			subdomains: 'abcd',
+		L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+			attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
 			maxZoom: 19
 		}).addTo(map);
 
@@ -65,9 +69,8 @@
 					map.removeLayer(layer);
 				}
 			});
-			L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-				attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-				subdomains: 'abcd',
+			L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+				attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
 				maxZoom: 19
 			}).addTo(map);
 		}
@@ -76,8 +79,31 @@
 		addMarkers();
 	}
 
+	async function loadCityReadings() {
+		loading = true;
+		dataError = '';
+		try {
+			const { cities = [] } = await getCities();
+			// Keep the initial map responsive while still using live backend readings.
+			const candidates = cities.slice(0, 24);
+			const results = await Promise.allSettled(candidates.map(({ name }) => predictCityAQI(name)));
+			aqiMockData = results.filter((r) => r.status === 'fulfilled' && Number.isFinite(r.value?.aqi)).map(({ value }) => ({
+				city: value.city, state: value.state, latitude: value.latitude, longitude: value.longitude,
+				aqi: value.aqi, mainPollutant: 'PM2.5', pm25: value.pm25, pm10: value.pm10, no2: value.no2,
+				so2: value.so2, co: value.co, o3: value.o3,
+				lastUpdated: value.timestamp ? new Date(value.timestamp).toLocaleString() : 'Recently'
+			}));
+			if (!aqiMockData.length) throw new Error('Live AQI readings are unavailable right now. Please try again later.');
+			if (results.some((r) => r.status === 'rejected')) dataError = 'Some cities could not be loaded; showing available live readings.';
+			if (map) addMarkers();
+		} catch (error) { dataError = error.message || 'Unable to load live city data.'; }
+		finally { loading = false; }
+	}
+
 	function addMarkers() {
 		if (!map || !L) return;
+		markers.forEach(({ marker }) => marker.remove());
+		markers = [];
 
 		aqiMockData.forEach((cityData) => {
 			const color = getAqiColor(cityData.aqi);
@@ -139,7 +165,7 @@
 			return;
 		}
 
-		const found = aqiMockData.find((c) => c.city.toLowerCase() === query);
+		const found = aqiMockData.find((c) => c.city.toLowerCase() === query || `${c.city}, ${c.state}`.toLowerCase() === query);
 
 		if (found) {
 			selectCity(found);
@@ -184,6 +210,8 @@
 </script>
 
 <div class="aqi-map-wrapper relative w-full">
+	{#if loading}<p class="mb-3 text-sm text-zinc-500">Loading live AQI readings…</p>{/if}
+	{#if dataError}<p role="status" class="mb-3 text-sm text-amber-600 dark:text-amber-400">{dataError}</p>{/if}
 	<!-- Search Bar -->
 	<div class="mb-4 flex flex-col sm:flex-row gap-2">
 		<div class="relative flex-1">
