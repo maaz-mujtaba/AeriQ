@@ -15,7 +15,7 @@ from app.db_models import User
 # PASSWORD HASHING
 # ============================================
 
-pwd_context = CryptContext(schemes=["bcrypt", "sha256_crypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["sha256_crypt", "bcrypt"], deprecated="auto")
 
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
@@ -27,7 +27,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 # JWT TOKENS
 # ============================================
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/users/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 def create_access_token(data: Dict[str, Any]) -> str:
     to_encode = data.copy()
@@ -50,7 +50,7 @@ def decode_token(token: str) -> Dict[str, Any]:
 # ============================================
 
 def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
-    user = db.query(User).filter(User.email == email).first()
+    user = db.query(User).filter(User.email == email.strip().lower()).first()
     if not user:
         return None
     if not verify_password(password, user.password_hash):

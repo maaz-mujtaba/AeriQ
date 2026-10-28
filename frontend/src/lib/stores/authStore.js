@@ -8,26 +8,25 @@ const initialStatus = isBrowser ? Boolean(localStorage.getItem('accessToken')) :
 export const loggedIn = writable(initialStatus);
 export const hasSession = () => isBrowser && Boolean(localStorage.getItem('accessToken'));
 
-/**
- * Simulates a successful login
- */
+/** Store the access token and user returned by the API. */
+/** @param {{ access_token: string, user: object }} session */
 export function login(session) {
 	if (isBrowser) {
 		if (!session?.access_token) throw new Error('The server did not return an access token.');
 		localStorage.setItem('accessToken', session.access_token);
 		localStorage.setItem('user', JSON.stringify(session.user));
+		window.dispatchEvent(new Event('aeriq:auth-changed'));
 	}
 	loggedIn.set(true);
 }
 
-/**
- * Simulates logging out
- */
+/** Clear the local API session. */
 export function logout() {
 	if (isBrowser) {
 		localStorage.removeItem('accessToken');
 		localStorage.removeItem('user');
 		localStorage.removeItem('isLoggedIn');
+		window.dispatchEvent(new Event('aeriq:auth-changed'));
 	}
 	loggedIn.set(false);
 }

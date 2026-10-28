@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { loggedIn } from '$lib/stores/authStore.js';
 	import { currentAQI } from '$lib/stores/aqiStore.js';
-	import { loadCurrentAQI } from '$lib/api.js';
+	import { assessHealthRisk, loadCurrentAQI } from '$lib/api.js';
 	import LoginRequired from '$lib/components/LoginRequired.svelte';
 
 	// Available health conditions
@@ -28,6 +28,8 @@
 
 	// Ticking/formatted time state
 	let formattedDateTime = $state('');
+	/** @type {{ risk_score: number, risk_category: string, recommendations: string[] } | null} */
+	let healthAssessment = $state(null);
 
 	// Load stored profile and subscribe to AQI data
 	onMount(() => {
@@ -68,9 +70,13 @@
 
 		// Try loading live AQI if not already available
 		if (!$currentAQI) {
-			loadCurrentAQI(28.6139, 77.209).catch(() => {
+			loadCurrentAQI(28.6139, 77.209).then((data) => {
+				assessHealthRisk(data.city).then((assessment) => healthAssessment = assessment).catch(() => {});
+			}).catch(() => {
 				// Graceful fallback to rich local state
 			});
+		} else {
+			assessHealthRisk($currentAQI.city).then((assessment) => healthAssessment = assessment).catch(() => {});
 		}
 
 		return () => clearInterval(timeInterval);
@@ -195,6 +201,15 @@
 
 	// Derived Health Risk based on conditions and AQI
 	let healthRisk = $derived.by(() => {
+		if (healthAssessment) {
+			const score = healthAssessment.risk_score;
+			return {
+				level: `${healthAssessment.risk_category} (${score}/100)`,
+				badgeClass: score >= 75 ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30' : score >= 50 ? 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20' : score >= 25 ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
+				dotClass: score >= 75 ? 'bg-rose-600' : score >= 50 ? 'bg-red-500' : score >= 25 ? 'bg-amber-500' : 'bg-emerald-500',
+				text: healthAssessment.recommendations?.[0] || 'Personalized risk assessment from your profile and current air quality.'
+			};
+		}
 		const val = activeAQI;
 		const isSensitive = hasRespiratoryCondition || hasHeart || hasPregnancy;
 
@@ -712,7 +727,6 @@
 		>
 			<div
 				class="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-2xl p-6 sm:p-7 shadow-2xl max-w-md w-full space-y-5 relative transition-all"
-				onclick={(e) => e.stopPropagation()}
 			>
 				<!-- Modal Header -->
 				<div class="flex items-start justify-between gap-3">

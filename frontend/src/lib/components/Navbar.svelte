@@ -15,18 +15,25 @@
 	let isNotificationOpen = $state(false);
 	let isUserDropdownOpen = $state(false);
 	let currentCity = $state('New Delhi, India');
+	/** @type {{ id: string, name: string, state: string, latitude: number, longitude: number }[]} */
 	let cities = $state([]);
 	let citySearch = $state('');
 	let cityLoadError = $state('');
+	/** @type {{ name?: string, email?: string } | null} */
 	let user = $state(null);
 	let visibleCities = $derived(cities.filter((city) => `${city.name} ${city.state}`.toLowerCase().includes(citySearch.toLowerCase())).slice(0, 30));
 
-	onMount(async () => {
-		try { cities = (await getCities()).cities || []; }
-		catch (error) { cityLoadError = error.message; }
-		try { user = JSON.parse(localStorage.getItem('user') || 'null'); } catch { user = null; }
-		const savedCity = localStorage.getItem('selectedCity');
-		if (savedCity) { try { const city = JSON.parse(savedCity); currentCity = `${city.name}, ${city.state}`; } catch { /* ignore invalid cache */ } }
+	onMount(() => {
+		const onAuthChanged = () => { try { user = JSON.parse(localStorage.getItem('user') || 'null'); } catch { user = null; } };
+		window.addEventListener('aeriq:auth-changed', onAuthChanged);
+		(async () => {
+			try { cities = (await getCities()).cities || []; }
+			catch (error) { cityLoadError = error instanceof Error ? error.message : 'Unable to load cities.'; }
+			try { user = JSON.parse(localStorage.getItem('user') || 'null'); } catch { user = null; }
+			const savedCity = localStorage.getItem('selectedCity');
+			if (savedCity) { try { const city = JSON.parse(savedCity); currentCity = `${city.name}, ${city.state}`; } catch { /* ignore invalid cache */ } }
+		})();
+		return () => window.removeEventListener('aeriq:auth-changed', onAuthChanged);
 	});
 
 	/**
@@ -60,7 +67,7 @@
 	}
 
 	/**
-	 * @param {string} city
+	 * @param {{ id: string, name: string, state: string, latitude: number, longitude: number }} city
 	 */
 	function selectCity(city) {
 		currentCity = `${city.name}, ${city.state}`;
@@ -185,8 +192,6 @@
 					<path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
 				</svg>
 				<!-- Active notification badge -->
-				<span class="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-amber-500 animate-ping"></span>
-				<span class="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-amber-500"></span>
 			</button>
 
 			<!-- Dropdown Menu -->

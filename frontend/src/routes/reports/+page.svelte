@@ -2,15 +2,15 @@
     import { loggedIn } from '$lib/stores/authStore.js';
     import LoginRequired from '$lib/components/LoginRequired.svelte';
 
-    let reportType = 'Air Quality Summary';
-    let selectedCity = 'New Delhi, India';
-    let dateRange = 'Last 30 Days';
-    let format = 'PDF';
+    let reportType = $state('Air Quality Summary');
+    let selectedCity = $state('New Delhi, India');
+    let dateRange = $state('Last 30 Days');
+    let format = $state('PDF');
 
-    let generating = false;
-    let showSuccess = false;
+    let generating = $state(false);
+    let showSuccess = $state(false);
 
-    let reports = [
+    let reports = $state([
         {
             id: 1,
             name: 'New Delhi Air Quality Summary',
@@ -47,7 +47,7 @@
             format: 'JSON',
             size: '732 KB'
         }
-    ];
+    ]);
 
     const reportTypes = [
         'Air Quality Summary',
@@ -103,10 +103,12 @@
         }, 1200);
     }
 
+    /** @param {number} id */
     function deleteReport(id) {
         reports = reports.filter((report) => report.id !== id);
     }
 
+    /** @param {{ format: string, name: string, type: string, range: string, date: string }} report */
     function downloadReport(report) {
         let content = '';
 
@@ -397,12 +399,12 @@
 
                 <!-- FORMAT -->
                 <div>
-                    <label
+                    <p
                         class="mb-2 block text-xs font-semibold
                         text-zinc-600 dark:text-zinc-400"
                     >
                         Export Format
-                    </label>
+                    </p>
 
                     <div class="grid grid-cols-3 gap-2">
                         {#each ['PDF', 'CSV', 'JSON'] as item}

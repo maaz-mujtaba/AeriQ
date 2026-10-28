@@ -1,20 +1,27 @@
 <script>
+	/** @typedef {{city: string, state: string, latitude: number, longitude: number, aqi: number, mainPollutant: string, pm25: number|null, pm10: number|null, no2: number|null, so2: number|null, co: number|null, o3: number|null, lastUpdated: string}} CityAQI */
 	import { onMount, onDestroy } from 'svelte';
 	import { aqiCategories, getAqiColor, getAqiCategory } from '$lib/data/aqiMockData.js';
 	import { getCities, predictCityAQI } from '$lib/api.js';
 
-	let mapContainer;
+	/** @type {HTMLElement | null} */
+	let mapContainer = null;
+	/** @type {any} */
 	let map = null;
+	/** @type {{ marker: any, data: CityAQI }[]} */
 	let markers = [];
 	let searchQuery = $state('');
+	/** @type {CityAQI | null} */
 	let selectedCity = $state(null);
 	let searchError = $state('');
 	let isLegendOpen = $state(true);
+	/** @type {CityAQI[]} */
 	let aqiMockData = $state([]);
 	let loading = $state(true);
 	let dataError = $state('');
 
 	// Leaflet instance (loaded dynamically to avoid SSR issues)
+	/** @type {any} */
 	let L = null;
 
 	onMount(async () => {
@@ -64,7 +71,7 @@
 
 		// Check for dark mode and use dark tiles
 		if (document.documentElement.classList.contains('dark')) {
-			map.eachLayer((layer) => {
+		map.eachLayer((/** @type {any} */ layer) => {
 				if (layer instanceof L.TileLayer) {
 					map.removeLayer(layer);
 				}
@@ -85,18 +92,23 @@
 		try {
 			const { cities = [] } = await getCities();
 			// Keep the initial map responsive while still using live backend readings.
-			const candidates = cities.slice(0, 24);
+			/** @type {{ name: string }[]} */
+			const candidates = cities.slice(0, 12);
 			const results = await Promise.allSettled(candidates.map(({ name }) => predictCityAQI(name)));
-			aqiMockData = results.filter((r) => r.status === 'fulfilled' && Number.isFinite(r.value?.aqi)).map(({ value }) => ({
+			aqiMockData = results.flatMap((result) => {
+				if (result.status !== 'fulfilled' || !Number.isFinite(result.value?.aqi)) return [];
+				const value = result.value;
+				return [{
 				city: value.city, state: value.state, latitude: value.latitude, longitude: value.longitude,
 				aqi: value.aqi, mainPollutant: 'PM2.5', pm25: value.pm25, pm10: value.pm10, no2: value.no2,
 				so2: value.so2, co: value.co, o3: value.o3,
 				lastUpdated: value.timestamp ? new Date(value.timestamp).toLocaleString() : 'Recently'
-			}));
+				}];
+			});
 			if (!aqiMockData.length) throw new Error('Live AQI readings are unavailable right now. Please try again later.');
-			if (results.some((r) => r.status === 'rejected')) dataError = 'Some cities could not be loaded; showing available live readings.';
+			if (results.some((result) => result.status === 'rejected')) dataError = 'Some cities could not be loaded; showing available live readings.';
 			if (map) addMarkers();
-		} catch (error) { dataError = error.message || 'Unable to load live city data.'; }
+		} catch (error) { dataError = error instanceof Error ? error.message : 'Unable to load live city data.'; }
 		finally { loading = false; }
 	}
 
@@ -151,6 +163,7 @@
 		});
 	}
 
+	/** @param {CityAQI} cityData */
 	function selectCity(cityData) {
 		selectedCity = cityData;
 		searchError = '';
@@ -189,6 +202,7 @@
 		}
 	}
 
+	/** @param {KeyboardEvent} e */
 	function handleSearchKeydown(e) {
 		if (e.key === 'Enter') {
 			handleSearch();
@@ -199,6 +213,7 @@
 		selectedCity = null;
 	}
 
+	/** @param {number} aqi */
 	function getCategoryBadgeClasses(aqi) {
 		if (aqi <= 50) return 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400';
 		if (aqi <= 100) return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-400';
@@ -291,6 +306,7 @@
 								<p class="text-xs text-zinc-500 dark:text-zinc-400">{selectedCity.state}</p>
 							</div>
 							<button
+								aria-label="Close city details"
 								onclick={closeDetails}
 								class="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors cursor-pointer"
 							>
@@ -350,6 +366,7 @@
 			</div>
 		{/if}
 	</div>
+	<p class="mt-2 text-xs text-zinc-500">Air-quality data: <a class="underline" href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> using CAMS atmospheric composition forecasts.</p>
 </div>
 
 <style>

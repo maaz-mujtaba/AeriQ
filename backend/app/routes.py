@@ -2,6 +2,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import Optional, List
 from datetime import datetime
+import json
+from collections import defaultdict
+import requests
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -16,7 +19,7 @@ from app.cities import (
     get_city_count, load_cities_from_csv
 )
 from app.openmeteo import fetch_air_quality, calculate_aqi_from_pm25
-from app.ml_model import predict_aqi
+from app.ml_model import predict_aqi, get_predictor
 
 # ============================================
 # IMPORT FROM CRUD AND AUTH (FIXED)
@@ -39,12 +42,34 @@ from app.auth import (
 )
 from app.health_risk import calculate_health_risk, get_default_threshold
 from app.database import get_db
+from app.config import settings
 
 # ============================================
 # CREATE ROUTER
 # ============================================
 
 router = APIRouter()
+
+
+def _predict_from_observations(data):
+    features = {key: data.get(key) for key in ("pm25", "pm10", "no2", "so2", "o3", "co", "temperature", "humidity", "wind_speed")}
+    aqi = predict_aqi(features)
+    if aqi is None:
+        aqi = calculate_aqi_from_pm25(data.get("pm25"))
+    return int(round(aqi)) if aqi is not None else None
+
+
+def _aqi_response(city, state, latitude, longitude, data):
+    aqi = _predict_from_observations(data)
+    category, color = get_aqi_category(aqi)
+    return AQIResponse(
+        city=city, state=state, latitude=latitude, longitude=longitude, aqi=aqi,
+        aqi_category=category, aqi_color=color, pm25=data.get("pm25"), pm10=data.get("pm10"),
+        no2=data.get("no2"), so2=data.get("so2"), o3=data.get("o3"), co=data.get("co"),
+        temperature=data.get("temperature"), humidity=data.get("humidity"),
+        wind_speed=data.get("wind_speed"), timestamp=data.get("timestamp"),
+        prediction_source="ml_model" if get_predictor().is_loaded else "cpcb_fallback"
+    )
 
 
 # ============================================
@@ -125,6 +150,77 @@ async def predict_city_aqi(request: CityRequest) -> AQIResponse:
 async def predict_city_aqi_get(city: str) -> AQIResponse:
     """GET endpoint for city AQI prediction."""
     return await predict_city_aqi(CityRequest(city=city))
+
+
+@router.get("/aqi/current", response_model=AQIResponse)
+async def current_aqi(latitude: float = Query(..., ge=-90, le=90), longitude: float = Query(..., ge=-180, le=180)):
+    """Return current AQI for a map/dashboard coordinate."""
+    data = fetch_air_quality(latitude, longitude)
+    if data.get("pm25") is None:
+        raise HTTPException(status_code=503, detail="Current air quality data is temporarily unavailable.")
+    nearest = min(get_all_city_data(), key=lambda city: (city["latitude"] - latitude) ** 2 + (city["longitude"] - longitude) ** 2, default=None)
+    city, state = (nearest["name"], nearest["state"]) if nearest else ("Selected location", "")
+    return _aqi_response(city, state, latitude, longitude, data)
+
+
+@router.get("/aqi/forecast")
+async def aqi_forecast(latitude: float = Query(..., ge=-90, le=90), longitude: float = Query(..., ge=-180, le=180)):
+    """Build three daily AQI projections from Open-Meteo forecast pollutants and the configured model."""
+    params = {
+        "latitude": latitude, "longitude": longitude, "forecast_days": 3,
+        "hourly": "pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,ozone,carbon_monoxide",
+        "timezone": "auto"
+    }
+    try:
+        response = requests.get(settings.open_meteo_base_url, params=params, timeout=settings.open_meteo_timeout)
+        response.raise_for_status()
+        hourly = response.json().get("hourly", {})
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=503, detail="AQI forecast is temporarily unavailable.") from exc
+    times = hourly.get("time", [])
+    forecast_dates = list(dict.fromkeys(stamp[:10] for stamp in times))[:3]
+    grouped = defaultdict(list)
+    fields = {"pm25": "pm2_5", "pm10": "pm10", "no2": "nitrogen_dioxide", "so2": "sulphur_dioxide", "o3": "ozone", "co": "carbon_monoxide"}
+    weather_by_time = {}
+    try:
+        weather_response = requests.get("https://api.open-meteo.com/v1/forecast", params={"latitude": latitude, "longitude": longitude, "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m", "forecast_days": 3, "timezone": "auto"}, timeout=settings.open_meteo_timeout)
+        weather_response.raise_for_status()
+        weather_hourly = weather_response.json().get("hourly", {})
+        weather_times = weather_hourly.get("time", [])
+        weather_by_time = {stamp: {"temperature": (weather_hourly.get("temperature_2m") or [None] * len(weather_times))[i], "humidity": (weather_hourly.get("relative_humidity_2m") or [None] * len(weather_times))[i], "wind_speed": (weather_hourly.get("wind_speed_10m") or [None] * len(weather_times))[i]} for i, stamp in enumerate(weather_times)}
+    except requests.RequestException:
+        logger.warning("Weather forecast conditions are unavailable")
+    for index, stamp in enumerate(times):
+        if stamp[:10] in forecast_dates:
+            row = {key: (hourly.get(field) or [None] * len(times))[index] for key, field in fields.items()}
+            row.update(weather_by_time.get(stamp, {}))
+            grouped[stamp[:10]].append(row)
+    forecast = []
+    forecast_fields = (*fields.keys(), "temperature", "humidity", "wind_speed")
+    for day_offset, (date, rows) in enumerate(sorted(grouped.items())):
+        valid = [row for row in rows if row.get("pm25") is not None]
+        if not valid:
+            continue
+        average = {key: sum(float(row[key]) for row in valid if row.get(key) is not None) / max(1, sum(row.get(key) is not None for row in valid)) if any(row.get(key) is not None for row in valid) else None for key in forecast_fields}
+        aqi = _predict_from_observations(average)
+        category, color = get_aqi_category(aqi)
+        forecast.append({"day": "Today" if day_offset == 0 else datetime.fromisoformat(date).strftime("%A"), "date": date, "aqi": aqi, "aqi_category": category, "aqi_color": color, "temperature": average["temperature"], "temp_high": max((r["temperature"] for r in valid if r.get("temperature") is not None), default=None), "temp_low": min((r["temperature"] for r in valid if r.get("temperature") is not None), default=None), "humidity": average["humidity"], "wind_speed": average["wind_speed"], "weather_desc": "Forecast from Open-Meteo", "trend_direction": "flat", "chance_of_improvement": None})
+    return {"forecast": forecast, "latitude": latitude, "longitude": longitude, "source": "open-meteo + aeriq model"}
+
+
+@router.get("/weather/hourly")
+async def weather_hourly(latitude: float = Query(..., ge=-90, le=90), longitude: float = Query(..., ge=-180, le=180)):
+    params = {"latitude": latitude, "longitude": longitude, "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation_probability,surface_pressure", "forecast_days": 3, "timezone": "auto"}
+    try:
+        response = requests.get("https://api.open-meteo.com/v1/forecast", params=params, timeout=settings.open_meteo_timeout)
+        response.raise_for_status()
+        hourly = response.json().get("hourly", {})
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=503, detail="Weather forecast is temporarily unavailable.") from exc
+    result = []
+    for i, stamp in enumerate(hourly.get("time", [])[:72]):
+        result.append({"time": stamp, "temperature": (hourly.get("temperature_2m") or [None] * 72)[i], "humidity": (hourly.get("relative_humidity_2m") or [None] * 72)[i], "wind_speed": (hourly.get("wind_speed_10m") or [None] * 72)[i], "rain_chance": (hourly.get("precipitation_probability") or [None] * 72)[i], "pressure": (hourly.get("surface_pressure") or [None] * 72)[i]})
+    return {"hourly": result, "latitude": latitude, "longitude": longitude}
 
 
 @router.get("/cities", response_model=CitySearchResponse)
@@ -298,11 +394,16 @@ async def assess_city_health(
     Requires authentication.
     """
     # Get user's home city AQI
-    home_city_data = get_city_coordinates(current_user["city"])
+    user_city = current_user.city
+    try:
+        vulnerabilities = json.loads(current_user.vulnerabilities or "[]")
+    except (TypeError, ValueError):
+        vulnerabilities = []
+    home_city_data = get_city_coordinates(user_city)
     if not home_city_data:
         raise HTTPException(
             status_code=404,
-            detail=f"Home city '{current_user['city']}' not found in database"
+            detail=f"Home city '{user_city}' not found in database"
         )
     
     # Get destination city coordinates
@@ -371,9 +472,9 @@ async def assess_city_health(
     
     # Calculate health risk
     user_profile = {
-        "age": current_user["age"],
-        "vulnerabilities": current_user["vulnerabilities"],
-        "city": current_user["city"]
+        "age": current_user.age,
+        "vulnerabilities": vulnerabilities,
+        "city": user_city
     }
     
     risk_result = calculate_health_risk(
@@ -385,10 +486,10 @@ async def assess_city_health(
     
     # Build response
     return HealthRiskResponse(
-        user_name=current_user["name"],
-        user_age=current_user["age"],
-        user_city=current_user["city"].title(),
-        vulnerabilities=current_user["vulnerabilities"],
+        user_name=current_user.name,
+        user_age=current_user.age,
+        user_city=user_city.title(),
+        vulnerabilities=vulnerabilities,
         city_name=dest_city_data["name"],
         city_aqi=dest_aqi,
         aqi_category=dest_category,
@@ -403,7 +504,7 @@ async def assess_city_health(
         medical_precautions=risk_result["recommendations"].get("medical", []),
         travel_advice=risk_result["recommendations"].get("travel", []),
         timestamp=datetime.now().isoformat(),
-        prediction_source="ml_model"
+        prediction_source="ml_model" if get_predictor().is_loaded else "cpcb_fallback"
     )
 
 
@@ -412,10 +513,14 @@ async def get_my_threshold(current_user = Depends(get_current_user)):
     """
     Get the user's alert threshold based on their vulnerabilities.
     """
-    threshold = get_default_threshold(current_user["vulnerabilities"])
+    try:
+        vulnerabilities = json.loads(current_user.vulnerabilities or "[]")
+    except (TypeError, ValueError):
+        vulnerabilities = []
+    threshold = get_default_threshold(vulnerabilities)
     return {
         "threshold": threshold,
-        "vulnerabilities": current_user["vulnerabilities"],
+        "vulnerabilities": vulnerabilities,
         "message": f"Your alert threshold is {threshold}. You'll be notified when AQI crosses this value."
     }
 

@@ -72,6 +72,7 @@
 		'Data Visualization'
 	];
 
+	/** @param {string} section */
 	function setSection(section) {
 		activeSection = section;
 

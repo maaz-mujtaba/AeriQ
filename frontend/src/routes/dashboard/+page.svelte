@@ -24,6 +24,14 @@
 	let currentTime = $state('');
 
 	onMount(() => {
+		/** @param {Event} event */
+		const onCitySelected = (event) => {
+			const city = /** @type {CustomEvent<{latitude: number, longitude: number}>} */ (event).detail;
+			if (city?.latitude != null && city?.longitude != null) {
+				loadCurrentAQI(city.latitude, city.longitude).catch(() => {});
+			}
+		};
+		window.addEventListener('aeriq:city-selected', onCitySelected);
 		const updateTime = () => {
 			currentTime = new Date().toLocaleTimeString('en-US', {
 				hour: '2-digit',
@@ -46,7 +54,10 @@
 			console.error('Failed to prefetch dynamic analytics panels:', err);
 		});
 
-		return () => clearInterval(interval);
+		return () => {
+			clearInterval(interval);
+			window.removeEventListener('aeriq:city-selected', onCitySelected);
+		};
 	});
 
 	const cityProfiles = {

@@ -17,11 +17,11 @@ def create_user(db: Session, user_data: UserCreate) -> User:
     
     user = User(
         name=user_data.name,
-        email=user_data.email,
+        email=user_data.email.strip().lower(),
         password_hash=get_password_hash(user_data.password),
         age=user_data.age,
         gender=user_data.gender.value if hasattr(user_data.gender, 'value') else user_data.gender,
-        city=user_data.city.lower(),
+        city=user_data.city.strip(),
         vulnerabilities=vulnerabilities_json
     )
     db.add(user)
@@ -31,7 +31,7 @@ def create_user(db: Session, user_data: UserCreate) -> User:
 
 
 def get_user_by_email(db: Session, email: str) -> Optional[User]:
-    return db.query(User).filter(User.email == email).first()
+    return db.query(User).filter(User.email == email.strip().lower()).first()
 
 
 def get_user_by_id(db: Session, user_id: int) -> Optional[User]:

@@ -33,7 +33,12 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:3000",
+        "https://aeriq-one.vercel.app",
     ]
+    alert_thresholds: dict = {
+        "general": 100, "asthma": 75, "respiratory": 75,
+        "heart_disease": 75, "elderly": 75, "child": 75,
+    }
     
     # ============================================
     # DATABASE (ADD THIS!)

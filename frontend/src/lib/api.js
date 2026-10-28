@@ -6,10 +6,13 @@ import {
     errorMessage
 } from '$lib/stores/aqiStore.js';
 import { writable } from 'svelte/store';
+import { logout } from '$lib/stores/authStore.js';
 
 // Configure PUBLIC_API_BASE_URL as https://aeriq-backend.onrender.com/api.
-const API_BASE_URL = (import.meta.env.PUBLIC_API_BASE_URL || 'https://aeriq-backend.onrender.com/api').replace(/\/+$/, '');
+const configuredApiBase = (import.meta.env.PUBLIC_API_BASE_URL || 'https://aeriq-backend.onrender.com/api').replace(/\/+$/, '');
+const API_BASE_URL = configuredApiBase.endsWith('/api') ? configuredApiBase : `${configuredApiBase}/api`;
 export const serverWaking = writable(false);
+let activeRequests = 0;
 
 // Reusable function for making API requests
 
@@ -23,7 +26,7 @@ async function apiRequest(endpoint, options = {}) {
     const normalizedPath = endpoint.startsWith('/api/') ? endpoint.slice(4) : endpoint;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 75000);
-    const startedAt = Date.now();
+    activeRequests += 1;
     const wakeTimer = setTimeout(() => serverWaking.set(true), 2500);
     try {
         const token = typeof localStorage !== 'undefined' ? localStorage.getItem('accessToken') : null;
@@ -31,7 +34,7 @@ async function apiRequest(endpoint, options = {}) {
             ...options,
             signal: options.signal || controller.signal,
             headers: {
-                'Content-Type': 'application/json',
+                ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
                 ...(token ? { Authorization: `Bearer ${token}` } : {}),
                 ...options.headers
             }
@@ -39,30 +42,38 @@ async function apiRequest(endpoint, options = {}) {
 
         if (!response.ok) {
             const payload = await response.json().catch(() => null);
+            if (response.status === 401 && token) logout();
             const detail = payload?.detail;
-            throw new Error(typeof detail === 'string' ? detail : detail?.error || `Request failed (${response.status})`);
+            const message = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((item) => item.msg).join('; ') : detail?.error;
+            throw new Error(message || `Request failed (${response.status})`);
         }
         if (response.status === 204) return null;
         return await response.json();
     } catch (error) {
         console.error(`AeriQ API error at ${endpoint}:`, error);
-        if (error?.name === 'AbortError') throw new Error('The server took too long to respond. Please try again.');
+        if (error instanceof Error && error.name === 'AbortError') throw new Error('The server took too long to respond. Please try again.');
         if (error instanceof TypeError) throw new Error('Cannot reach the AeriQ server. Check your connection and try again.');
         throw error;
     } finally {
         clearTimeout(timeout);
         clearTimeout(wakeTimer);
-        serverWaking.set(false);
+        activeRequests = Math.max(0, activeRequests - 1);
+        if (activeRequests === 0) serverWaking.set(false);
     }
 }
 
 export const api = { request: apiRequest };
+/** @param {{ email: string, password: string }} credentials */
 export const signIn = (credentials) => apiRequest('/auth/login', { method: 'POST', body: JSON.stringify(credentials) });
+/** @param {object} profile */
 export const signUp = (profile) => apiRequest('/auth/register', { method: 'POST', body: JSON.stringify(profile) });
+/** @param {string} city */
 export const predictCityAQI = (city) => apiRequest(`/predict/${encodeURIComponent(city)}`);
-export const getCities = () => apiRequest('/cities?limit=250');
+export const getCities = () => apiRequest('/cities/all');
 export const getCurrentUser = () => apiRequest('/auth/me');
+/** @param {string} city */
 export const assessHealthRisk = (city) => apiRequest('/health/assess', { method: 'POST', body: JSON.stringify({ city }) });
+/** @param {string} city1 @param {string} city2 */
 export const compareCities = (city1, city2) => apiRequest(`/compare/${encodeURIComponent(city1)}/${encodeURIComponent(city2)}`);
 
 /**
@@ -85,33 +96,6 @@ export async function getAQIForecast(latitude, longitude) {
     return apiRequest(
         `/aqi/forecast?latitude=${latitude}&longitude=${longitude}`
     );
-}
-
-/**
- * Get previous AQI readings.
- * @param {number} latitude
- * @param {number} longitude
- */
-export async function getAQIHistory(latitude, longitude) {
-    return apiRequest(
-        `/aqi/history?latitude=${latitude}&longitude=${longitude}`
-    );
-}
-
-/**
- * Subscribe a user to air-quality alerts.
- * @param {{
- *   email: string,
- *   latitude: number,
- *   longitude: number,
- *   vulnerableGroup: string
- * }} subscriptionData
- */
-export async function subscribeToAlerts(subscriptionData) {
-    return apiRequest('/alerts/subscribe', {
-        method: 'POST',
-        body: JSON.stringify(subscriptionData)
-    });
 }
 
 /**

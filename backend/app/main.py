@@ -7,12 +7,15 @@ from app.routes import router as api_router
 from app.models import HealthCheckResponse
 from app.ml_model import get_predictor
 from app.cities import load_cities_from_csv, get_city_count
+from app.database import Base, engine
+from app.db_models import User  # register SQLAlchemy metadata before create_all
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("🚀 Starting AeriQ API...")
     load_cities_from_csv()
+    Base.metadata.create_all(bind=engine)
     print(f"📊 Loaded {get_city_count()} cities")
     
     predictor = get_predictor()
@@ -41,7 +44,6 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
-    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

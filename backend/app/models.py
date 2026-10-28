@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, EmailStr, validator
 from typing import Optional, List
 from datetime import datetime
 from enum import Enum
+import json
 
 # ============================================
 # EXISTING AQI MODELS (Keep these)
@@ -234,6 +235,17 @@ class UserResponse(BaseModel):
     vulnerabilities: List[str]
     created_at: datetime
     updated_at: Optional[datetime] = None
+
+    @validator("vulnerabilities", pre=True)
+    def parse_vulnerabilities(cls, value):
+        if value is None or value == "":
+            return []
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except (TypeError, ValueError):
+                return []
+        return [item.value if hasattr(item, "value") else item for item in value]
     
     class Config:
         from_attributes = True

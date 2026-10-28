@@ -498,7 +498,7 @@
 			<svg class="h-4 w-4 text-emerald-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
 				<path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
 			</svg>
-			<span>Data Source: Forecast compiled via regional Weather API & AeriQ AQI ML Prediction Model.</span>
+			<span>Data: <a class="underline" href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> and CAMS air-quality forecasts, processed with the AeriQ prediction model.</span>
 		</div>
 		<span class="text-zinc-400">Last Synced: Just now</span>
 	</div>

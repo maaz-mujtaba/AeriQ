@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional
 import logging
 import time
 from functools import wraps
+from zoneinfo import ZoneInfo
 
 from app.config import settings
 
@@ -73,29 +74,16 @@ def _fetch_air_quality_raw(latitude: float, longitude: float) -> Dict[str, Any]:
     """
     Raw API call without caching or retry logic.
     """
-    today = datetime.now().strftime("%Y-%m-%d")
     
     params = {
         "latitude": latitude,
         "longitude": longitude,
-        "start_date": today,
-        "end_date": today,
-        "hourly": [
-            "pm10",
-            "pm2_5",
-            "nitrogen_dioxide",
-            "sulphur_dioxide",
-            "ozone",
-            "carbon_monoxide",
-            "temperature_2m",
-            "relative_humidity_2m",
-            "wind_speed_10m",
-        ],
+        "forecast_days": 1,
+        "hourly": "pm10,pm2_5,nitrogen_dioxide,sulphur_dioxide,ozone,carbon_monoxide",
         "timezone": "Asia/Kolkata",
     }
-    
-    logger.info(f"📡 Fetching data from Open-Meteo for {latitude}, {longitude}")
-    
+
+    logger.info(f"Fetching air quality from Open-Meteo for {latitude}, {longitude}")
     response = requests.get(
         settings.open_meteo_base_url,
         params=params,
@@ -103,40 +91,54 @@ def _fetch_air_quality_raw(latitude: float, longitude: float) -> Dict[str, Any]:
     )
     response.raise_for_status()
     data = response.json()
-    
-    # Extract hourly data
+
+    weather = {}
+    try:
+        weather_response = requests.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude": latitude,
+                "longitude": longitude,
+                "current": "temperature_2m,relative_humidity_2m,wind_speed_10m",
+                "timezone": "Asia/Kolkata",
+            },
+            timeout=getattr(settings, 'open_meteo_timeout', 30),
+        )
+        weather_response.raise_for_status()
+        weather = weather_response.json().get("current", {})
+    except requests.RequestException as exc:
+        logger.warning(f"Weather conditions are unavailable: {exc}")
+
+    # Extract the latest pollutant observation at or before local current time.
     hourly = data.get("hourly", {})
-    if not hourly:
-        logger.warning("No hourly data in response")
-        return _empty_response()
-    
-    # Get the latest hour
     time_list = hourly.get("time", [])
     if not time_list:
-        logger.warning("No time data in response")
+        logger.warning("No hourly data in air quality response")
         return _empty_response()
-    
-    last_index = -1
-    
+
+    now_local = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%dT%H:%M")
+    valid_indices = [i for i, stamp in enumerate(time_list) if stamp <= now_local]
+    last_index = valid_indices[-1] if valid_indices else 0
+    def at(field):
+        values = hourly.get(field) or []
+        return values[last_index] if last_index < len(values) else None
+
     result = {
         "timestamp": time_list[last_index],
-        "pm25": hourly.get("pm2_5", [None])[last_index],
-        "pm10": hourly.get("pm10", [None])[last_index],
-        "no2": hourly.get("nitrogen_dioxide", [None])[last_index],
-        "so2": hourly.get("sulphur_dioxide", [None])[last_index],
-        "o3": hourly.get("ozone", [None])[last_index],
-        "co": hourly.get("carbon_monoxide", [None])[last_index],
-        "temperature": hourly.get("temperature_2m", [None])[last_index],
-        "humidity": hourly.get("relative_humidity_2m", [None])[last_index],
-        "wind_speed": hourly.get("wind_speed_10m", [None])[last_index],
+        "pm25": at("pm2_5"),
+        "pm10": at("pm10"),
+        "no2": at("nitrogen_dioxide"),
+        "so2": at("sulphur_dioxide"),
+        "o3": at("ozone"),
+        "co": at("carbon_monoxide"),
+        "temperature": weather.get("temperature_2m"),
+        "humidity": weather.get("relative_humidity_2m"),
+        "wind_speed": weather.get("wind_speed_10m"),
     }
-    
-    # Validate data
-    result = _validate_data(result)
-    
-    logger.info(f"✅ Fetched data: PM2.5={result['pm25']}, AQI={calculate_aqi_from_pm25(result['pm25'])}")
-    return result
 
+    result = _validate_data(result)
+    logger.info(f"Fetched data: PM2.5={result['pm25']}, AQI={calculate_aqi_from_pm25(result['pm25'])}")
+    return result
 
 def fetch_historical_data(
     latitude: float,
@@ -162,17 +164,7 @@ def fetch_historical_data(
         "longitude": longitude,
         "start_date": start_date,
         "end_date": end_date,
-        "hourly": [
-            "pm10",
-            "pm2_5",
-            "nitrogen_dioxide",
-            "sulphur_dioxide",
-            "ozone",
-            "carbon_monoxide",
-            "temperature_2m",
-            "relative_humidity_2m",
-            "wind_speed_10m",
-        ],
+        "hourly": "pm10,pm2_5,nitrogen_dioxide,sulphur_dioxide,ozone,carbon_monoxide",
         "timezone": "Asia/Kolkata",
     }
     
@@ -192,7 +184,15 @@ def fetch_historical_data(
             logger.warning("No hourly data in historical response")
             return pd.DataFrame()
         
-        # Build DataFrame
+        weather = {}
+        try:
+            weather_response = requests.get("https://archive-api.open-meteo.com/v1/archive", params={"latitude": latitude, "longitude": longitude, "start_date": start_date, "end_date": end_date, "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m", "timezone": "Asia/Kolkata"}, timeout=60)
+            weather_response.raise_for_status()
+            weather = weather_response.json().get("hourly", {})
+        except requests.RequestException as exc:
+            logger.warning(f"Historical weather data is unavailable: {exc}")
+
+        # Build DataFrame from the air-quality and weather APIs.
         df = pd.DataFrame({
             "timestamp": pd.to_datetime(hourly.get("time", [])),
             "pm25": hourly.get("pm2_5", []),
@@ -201,9 +201,9 @@ def fetch_historical_data(
             "so2": hourly.get("sulphur_dioxide", []),
             "o3": hourly.get("ozone", []),
             "co": hourly.get("carbon_monoxide", []),
-            "temperature": hourly.get("temperature_2m", []),
-            "humidity": hourly.get("relative_humidity_2m", []),
-            "wind_speed": hourly.get("wind_speed_10m", []),
+            "temperature": weather.get("temperature_2m", []),
+            "humidity": weather.get("relative_humidity_2m", []),
+            "wind_speed": weather.get("wind_speed_10m", []),
         })
         
         # Drop rows with all missing values
