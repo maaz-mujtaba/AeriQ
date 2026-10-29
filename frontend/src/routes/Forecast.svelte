@@ -1,7 +1,6 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { forecastData, weatherHourly, isLoading, errorMessage } from '$lib/stores/aqiStore.js';
-	import { loadAQIForecast, loadWeatherHourly } from '$lib/api.js';
+	import { forecastData, weatherHourly } from '$lib/stores/aqiStore.js';
+	import { getModelStatus, loadAQIForecast, loadWeatherHourly } from '$lib/api.js';
 
 	// Component imports
 	import ForecastChart from '$lib/components/ForecastChart.svelte';
@@ -34,71 +33,65 @@
 	let selectedIndex = $state(0); // Selected forecast day (Tomorrow, Sunday, etc.)
 	let activeWeatherTab: keyof typeof weatherTabConfigs = $state('temperature'); // Weather trends active tab
 	let isRefreshing = $state(false);
+	let forecastLoading = $state(true);
+	let forecastError = $state('');
+	let modelError = $state('');
+	let modelStatus: { is_loaded: boolean; model_type?: string; n_estimators?: number; feature_names?: string[]; has_scaler?: boolean } | null = $state(null);
+	let forecastMeta: { prediction_method?: string; model_loaded?: boolean; source?: string } | null = $state(null);
+	let lastSyncedAt = $state('');
 
 	const weatherTabKeys = Object.keys(weatherTabConfigs) as Array<keyof typeof weatherTabConfigs>;
 
 	let activeProfile = $derived(cityProfiles[activeCityKey]);
 	let activeForecastItems = $derived($forecastData || []);
 
-	// Active single day selected data profile (for Weather Summary and Health Recommendations)
-	let selectedDayData = $derived(activeForecastItems[selectedIndex] || {
-		day: 'Tomorrow',
-		date: 'Jul 25',
-		aqi: 0,
-		aqi_category: 'Good',
-		aqi_color: '#10b981',
-		weather_desc: 'Clear Sky',
-		weather_icon: 'sun',
-		temperature: 25,
-		temp_high: 28,
-		temp_low: 21,
-		humidity: 60,
-		wind_speed: 10,
-		wind_dir: 'NNE',
-		pressure: 1010,
-		visibility: 10,
-		uv_index: '3 (Low)',
-		chance_of_improvement: 80,
-		trend_direction: 'flat'
-	});
+	// The API response is the source of displayed forecast values; no synthetic AQI defaults.
+	let selectedDayData = $derived(activeForecastItems[selectedIndex] || null);
 
-	// Derive pollutant breakdown for selected day based on its AQI and city base ratio
 	let pollutantsList = $derived.by(() => {
-		const aqi = selectedDayData.aqi;
-		const baseAqi = activeProfile.lat === 28.6139 ? 185 : activeProfile.lat === 40.7128 ? 35 : activeProfile.lat === 51.5074 ? 55 : activeProfile.lat === 35.6762 ? 82 : 24;
-		const mult = baseAqi > 0 ? (aqi / baseAqi) : 1.0;
-
+		const input = selectedDayData?.pollutants || {};
 		return [
-			{ name: 'PM2.5', value: Math.round(120 * mult * 10) / 10, limit: 30, unit: 'µg/m³', status: aqi <= 50 ? 'Good' : aqi <= 100 ? 'Moderate' : 'Poor' },
-			{ name: 'PM10', value: Math.round(185 * mult * 10) / 10, limit: 60, unit: 'µg/m³', status: aqi <= 50 ? 'Good' : aqi <= 100 ? 'Moderate' : 'Poor' },
-			{ name: 'NO₂', value: Math.round(48 * mult * 10) / 10, limit: 40, unit: 'µg/m³', status: aqi <= 100 ? 'Good' : 'Moderate' },
-			{ name: 'SO₂', value: Math.round(15 * mult * 10) / 10, limit: 40, unit: 'µg/m³', status: 'Good' },
-			{ name: 'CO', value: Math.round(1.8 * mult * 10) / 10, limit: 2.0, unit: 'mg/m³', status: aqi <= 100 ? 'Good' : 'Moderate' },
-			{ name: 'O₃', value: Math.round(85 * mult * 10) / 10, limit: 100, unit: 'µg/m³', status: aqi <= 100 ? 'Good' : 'Moderate' }
-		];
+			{ name: 'PM2.5', value: input.pm25, limit: 30, unit: 'ug/m3' },
+			{ name: 'PM10', value: input.pm10, limit: 60, unit: 'ug/m3' },
+			{ name: 'NO2', value: input.no2, limit: 40, unit: 'ug/m3' },
+			{ name: 'SO2', value: input.so2, limit: 40, unit: 'ug/m3' },
+			{ name: 'CO', value: input.co == null ? null : input.co / 1000, limit: 2.0, unit: 'mg/m3' },
+			{ name: 'O3', value: input.o3, limit: 100, unit: 'ug/m3' }
+		].map((item) => ({
+			...item,
+			status: item.value == null ? 'Unavailable' : item.value <= item.limit * 0.75 ? 'Good' : item.value <= item.limit ? 'Moderate' : 'High'
+		}));
 	});
 
-	// Trigger API refresh
-	async function handleRefresh() {
-		isRefreshing = true;
-		try {
-			await Promise.all([
-				loadAQIForecast(activeProfile.lat, activeProfile.lon),
-				loadWeatherHourly(activeProfile.lat, activeProfile.lon)
-			]);
-		} catch (err) {
-			console.log('Unable to connect to live API. Fallback triggered.');
-		} finally {
-			setTimeout(() => {
-				isRefreshing = false;
-			}, 600);
+	async function refreshForecast(latitude: number, longitude: number) {
+		forecastLoading = true;
+		forecastError = '';
+		modelError = '';
+		const [forecastResult, _weatherResult, modelResult] = await Promise.allSettled([
+			loadAQIForecast(latitude, longitude),
+			loadWeatherHourly(latitude, longitude),
+			getModelStatus()
+		]);
+		if (forecastResult.status === 'fulfilled') {
+			forecastMeta = forecastResult.value;
+			lastSyncedAt = new Date().toLocaleTimeString();
+		} else {
+			forecastMeta = null;
+			forecastError = forecastResult.reason instanceof Error ? forecastResult.reason.message : 'Forecast data is unavailable.';
 		}
+		if (modelResult.status === 'fulfilled') modelStatus = modelResult.value;
+		else modelError = modelResult.reason instanceof Error ? modelResult.reason.message : 'Model status is unavailable.';
+		forecastLoading = false;
 	}
 
-	// Trigger load on profile coordinate shifts
+	async function handleRefresh() {
+		isRefreshing = true;
+		try { await refreshForecast(activeProfile.lat, activeProfile.lon); }
+		finally { isRefreshing = false; }
+	}
+
 	$effect(() => {
-		loadAQIForecast(activeProfile.lat, activeProfile.lon).catch(() => {});
-		loadWeatherHourly(activeProfile.lat, activeProfile.lon).catch(() => {});
+		void refreshForecast(activeProfile.lat, activeProfile.lon);
 	});
 
 	// Reset selected index when city key shifts
@@ -111,7 +104,7 @@
 <div class="space-y-8 select-none relative animate-fade-in">
 	
 	<!-- Glass Loading Spinner Overlay -->
-	{#if isRefreshing || $isLoading}
+	{#if isRefreshing || forecastLoading}
 		<div class="fixed inset-0 bg-white/30 dark:bg-zinc-950/30 backdrop-blur-sm z-50 flex items-center justify-center transition-all duration-300">
 			<div class="flex flex-col items-center gap-3 p-6 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-2xl shadow-xl animate-scale-up">
 				<svg class="h-8 w-8 text-emerald-500 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
@@ -186,7 +179,43 @@
 		</div>
 	</div>
 
+	<div class="grid gap-4 sm:grid-cols-2">
+		<section class="rounded-2xl border border-zinc-200 bg-white/70 p-4 dark:border-zinc-800 dark:bg-zinc-900/70" aria-live="polite">
+			<div class="flex items-center justify-between gap-3">
+				<div>
+					<p class="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Prediction Engine</p>
+					<h2 class="mt-1 text-sm font-bold text-zinc-900 dark:text-white">
+						{modelStatus?.is_loaded ? (modelStatus.model_type || 'Machine learning model') : modelStatus ? 'CPCB fallback active' : 'Checking model status...'}
+					</h2>
+				</div>
+				<span class="rounded-full px-2.5 py-1 text-[10px] font-bold {modelStatus?.is_loaded ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : modelStatus ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'}">
+					{modelStatus?.is_loaded ? 'MODEL LOADED' : modelStatus ? 'FALLBACK MODE' : 'CHECKING'}
+				</span>
+			</div>
+			<p class="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+				{#if modelStatus?.is_loaded}
+					{modelStatus.n_estimators ? `${modelStatus.n_estimators} decision trees` : 'Random forest'} · {modelStatus.feature_names?.length || 0} input features · {modelStatus.has_scaler ? 'scaled inputs' : 'unscaled inputs'}
+				{:else if modelStatus}
+					The trained model is unavailable; AQI uses the CPCB PM2.5 formula.
+				{:else}
+					{modelError || 'Connecting to the model service.'}
+				{/if}
+			</p>
+		</section>
+		<section class="rounded-2xl border border-zinc-200 bg-white/70 p-4 dark:border-zinc-800 dark:bg-zinc-900/70">
+			<p class="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Forecast computation</p>
+			<p class="mt-1 text-sm font-bold text-zinc-900 dark:text-white">
+				{selectedDayData?.prediction_source === 'ml_model' ? 'ML prediction' : selectedDayData?.prediction_source === 'cpcb_fallback' ? 'CPCB fallback prediction' : forecastMeta?.prediction_method || 'Awaiting forecast'}
+			</p>
+			<p class="mt-2 text-xs text-zinc-500 dark:text-zinc-400">Daily pollutant and weather forecast averages are sent to the prediction engine. AQI and pollutant values below come from that response.</p>
+		</section>
+	</div>
+	{#if forecastError}
+		<div role="alert" class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">Forecast unavailable: {forecastError}</div>
+	{/if}
+
 	<!-- ==================== SECTION 1: Today Overview ==================== -->
+	{#if selectedDayData}
 	<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 z-10 relative animate-slide-up">
 		
 		<!-- CARD 1: Today's AQI -->
@@ -230,7 +259,7 @@
 						</div>
 						<div>
 							<p class="uppercase text-[8px] tracking-wider text-zinc-400 dark:text-zinc-550">Updated</p>
-							<p class="text-zinc-850 dark:text-zinc-200 mt-0.5 truncate">2 mins ago</p>
+							<p class="text-zinc-850 dark:text-zinc-200 mt-0.5 truncate">{selectedDayData.date || 'Daily forecast'}</p>
 						</div>
 					</div>
 				</div>
@@ -253,7 +282,7 @@
 				windSpeed={selectedDayData.wind_speed}
 				pressure={selectedDayData.pressure}
 				visibility={selectedDayData.visibility}
-				uvIndex={selectedDayData.uv_index.split(' ')[0]}
+				uvIndex={selectedDayData.uv_index?.split?.(' ')[0] || 'N/A'}
 			/>
 		</div>
 
@@ -265,6 +294,12 @@
 			/>
 		</div>
 	</div>
+	{:else if !forecastLoading}
+		<div class="rounded-2xl border border-zinc-200 bg-white/60 p-8 text-center dark:border-zinc-800 dark:bg-zinc-900/60">
+			<h2 class="font-bold text-zinc-900 dark:text-white">No AQI prediction to display</h2>
+			<p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">The forecast service did not return usable pollutant data for {activeProfile.name}. Refresh to try again.</p>
+		</div>
+	{/if}
 
 	<!-- ==================== SECTION 2: Hourly Forecast ==================== -->
 	<div class="space-y-3 z-10 relative">
@@ -274,7 +309,7 @@
 		
 		<div class="flex overflow-x-auto gap-4 pb-3 scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800 scrollbar-track-transparent">
 			{#if $weatherHourly.length === 0}
-				<div class="h-28 w-full animate-pulse bg-zinc-200/50 dark:bg-zinc-800/20 border border-zinc-200/40 dark:border-zinc-800/40 rounded-2xl"></div>
+				<div class="w-full rounded-2xl border border-zinc-200/40 p-5 text-sm text-zinc-500 dark:border-zinc-800/40">{forecastLoading ? 'Loading hourly weather...' : 'Hourly weather data is unavailable.'}</div>
 			{:else}
 				{#each $weatherHourly as hour}
 					<div class="p-4 bg-white/40 dark:bg-zinc-900/40 border border-white/20 dark:border-zinc-800/80 backdrop-blur-xl rounded-2xl flex flex-col items-center justify-between min-w-[105px] text-center shadow-sm hover:shadow hover:bg-white dark:hover:bg-zinc-900 transition-all duration-300">
@@ -301,7 +336,7 @@
 
 						<!-- AQI -->
 						<span class="text-[8px] font-black px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-850 text-zinc-650 dark:text-zinc-350 mt-1.5 leading-none">
-							AQI {hour.aqi}
+							{hour.aqi == null ? 'AQI unavailable' : `AQI ${hour.aqi}`}
 						</span>
 
 						<!-- Stats -->
@@ -316,10 +351,10 @@
 		</div>
 	</div>
 
-	<!-- ==================== SECTION 3: 5-Day Forecast Grid ==================== -->
+	<!-- ==================== SECTION 3: Multi-Day Forecast Grid ==================== -->
 	<div class="space-y-3 z-10 relative">
 		<h3 class="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
-			5-Day Outlook Grid
+			3-Day Outlook Grid
 		</h3>
 		<ForecastGrid
 			forecastItems={activeForecastItems}
@@ -390,16 +425,16 @@
 	<!-- ==================== SECTION 6: Air Quality Breakdown ==================== -->
 	<div class="space-y-3 z-10 relative animate-slide-up">
 		<h3 class="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
-			Air Quality Breakdown ({selectedDayData.day} Projections)
+			Air Quality Breakdown{selectedDayData ? ` (${selectedDayData.day} daily forecast inputs)` : ''}
 		</h3>
 		<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
 			{#each pollutantsList as poll}
-				{@const pct = Math.min(100, Math.round((poll.value / poll.limit) * 100))}
+				{@const pct = poll.value == null ? 0 : Math.min(100, Math.round((poll.value / poll.limit) * 100))}
 				<div class="bg-white/40 dark:bg-zinc-900/40 border border-white/20 dark:border-zinc-800/80 backdrop-blur-xl rounded-2xl p-4.5 shadow-sm space-y-3 flex flex-col justify-between hover:shadow hover:bg-white dark:hover:bg-zinc-900 transition-all duration-300">
 					<!-- Header: Name & Status -->
 					<div class="flex items-center justify-between">
 						<span class="text-xs font-bold text-zinc-850 dark:text-zinc-200">{poll.name}</span>
-						<span class="text-[8px] font-black uppercase px-2 py-0.5 rounded {poll.status === 'Good' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/10' : poll.status === 'Moderate' ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/10' : 'bg-red-500/10 text-red-700 dark:text-red-400 border border-red-500/10'}">
+						<span class="text-[8px] font-black uppercase px-2 py-0.5 rounded {poll.status === 'Good' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/10' : poll.status === 'Moderate' ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/10' : poll.status === 'Unavailable' ? 'bg-zinc-500/10 text-zinc-500' : 'bg-red-500/10 text-red-700 dark:text-red-400 border border-red-500/10'}">
 							{poll.status}
 						</span>
 					</div>
@@ -407,10 +442,10 @@
 					<!-- Value, limit and unit -->
 					<div class="space-y-0.5">
 						<p class="text-2xl font-black text-zinc-900 dark:text-white">
-							{poll.value}
+							{poll.value == null ? 'N/A' : poll.value.toFixed(1)}
 							<span class="text-[10px] font-bold text-zinc-400 dark:text-zinc-500">{poll.unit}</span>
 						</p>
-						<p class="text-[8px] text-zinc-400 dark:text-zinc-550 font-bold uppercase tracking-wider">Limit: {poll.limit} {poll.unit}</p>
+						<p class="text-[8px] text-zinc-400 dark:text-zinc-550 font-bold uppercase tracking-wider">{poll.value == null ? 'No measurement returned' : `Reference: ${poll.limit} ${poll.unit}`}</p>
 					</div>
 
 					<!-- Progress Indicator -->
@@ -498,9 +533,9 @@
 			<svg class="h-4 w-4 text-emerald-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
 				<path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
 			</svg>
-			<span>Data: <a class="underline" href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> and CAMS air-quality forecasts, processed with the AeriQ prediction model.</span>
+			<span>Data: <a class="underline" href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> and CAMS forecasts, processed with {forecastMeta?.prediction_method || 'the configured AQI prediction method'}.</span>
 		</div>
-		<span class="text-zinc-400">Last Synced: Just now</span>
+		<span class="text-zinc-400">Last Synced: {lastSyncedAt || 'Not yet synced'}</span>
 	</div>
 </div>
 

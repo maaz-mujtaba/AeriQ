@@ -149,6 +149,9 @@
 
 	<!-- Vector Line Graph Container -->
 	<div class="relative w-full flex-1 min-h-0 select-none z-10 py-2">
+		{#if items.length === 0}
+			<div class="flex h-full min-h-40 items-center justify-center rounded-xl border border-dashed border-zinc-200 text-sm text-zinc-500 dark:border-zinc-800">No forecast data returned by the prediction service.</div>
+		{:else}
 		<svg class="w-full h-full" viewBox="0 0 {viewWidth} {viewHeight}" preserveAspectRatio="none">
 			<!-- SVG Definitions: Gradients -->
 			<defs>
@@ -251,6 +254,7 @@
 				/>
 			{/each}
 		</svg>
+		{/if}
 	</div>
 
 	<!-- Interactive Tooltip Overlay -->

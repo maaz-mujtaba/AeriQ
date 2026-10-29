@@ -63,6 +63,9 @@
 				</tr>
 			</thead>
 			<tbody class="divide-y divide-zinc-200/20 dark:divide-zinc-800/40">
+				{#if forecastItems.length === 0}
+					<tr><td colspan="12" class="px-4 py-8 text-center text-sm text-zinc-500">No prediction rows are available. Check the model status and refresh the forecast.</td></tr>
+				{:else}
 				{#each forecastItems as item, idx}
 					<tr
 						onclick={() => onselect(idx)}
@@ -146,6 +149,7 @@
 						</td>
 					</tr>
 				{/each}
+				{/if}
 			</tbody>
 		</table>
 	</div>

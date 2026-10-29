@@ -23,6 +23,10 @@
 	}
 </script>
 
+
+{#if forecastItems.length === 0}
+	<div class="rounded-xl border border-dashed border-zinc-200 p-5 text-sm text-zinc-500 dark:border-zinc-800">Daily outlook will appear when the API returns pollutant forecasts.</div>
+{:else}
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 select-none relative animate-slide-up">
 	{#each forecastItems as item, idx}
 		<ForecastCard
@@ -46,3 +50,4 @@
 		/>
 	{/each}
 </div>
+{/if}
