@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { forecastData, weatherHourly } from '$lib/stores/aqiStore.js';
-	import { getCurrentAQI, getModelStatus, loadAQIForecast, loadWeatherHourly } from '$lib/api.js';
+	import { getCities, getCurrentAQI, getModelStatus, loadAQIForecast, loadWeatherHourly } from '$lib/api.js';
 
 	// Component imports
 	import ForecastChart from '$lib/components/ForecastChart.svelte';
@@ -10,14 +10,8 @@
 	import ForecastTable from '$lib/components/ForecastTable.svelte';
 	import AQIGauge from '$lib/components/AQIGauge.svelte';
 
-	// Coordinate mapping matching Dashboard city profiles
-	const cityProfiles = {
-		delhi: { name: 'New Delhi, India', lat: 28.6139, lon: 77.209 },
-		newyork: { name: 'New York, USA', lat: 40.7128, lon: -74.006 },
-		london: { name: 'London, UK', lat: 51.5074, lon: -0.1278 },
-		tokyo: { name: 'Tokyo, Japan', lat: 35.6762, lon: 139.6503 },
-		sydney: { name: 'Sydney, Australia', lat: -33.8688, lon: 151.2093 }
-	};
+	type City = { id: string; name: string; state: string; latitude: number; longitude: number };
+	const defaultCity: City = { id: 'new delhi', name: 'New Delhi', state: 'Delhi', latitude: 28.6139, longitude: 77.209 };
 
 	// Tab configuration for weather trends
 	const weatherTabConfigs = {
@@ -29,7 +23,10 @@
 	};
 
 	// Page local states
-	let activeCityKey: keyof typeof cityProfiles = $state('delhi');
+	let activeCity: City = $state(defaultCity);
+	let cityOptions: City[] = $state([]);
+	let citySearch = $state('');
+	let showCitySuggestions = $state(false);
 	let selectedIndex = $state(0); // Selected forecast day (Tomorrow, Sunday, etc.)
 	let activeWeatherTab: keyof typeof weatherTabConfigs = $state('temperature'); // Weather trends active tab
 	let isRefreshing = $state(false);
@@ -44,7 +41,8 @@
 
 	const weatherTabKeys = Object.keys(weatherTabConfigs) as Array<keyof typeof weatherTabConfigs>;
 
-	let activeProfile = $derived(cityProfiles[activeCityKey]);
+	let activeProfile = $derived({ name: `${activeCity.name}, ${activeCity.state}`, lat: activeCity.latitude, lon: activeCity.longitude });
+	let matchingCities = $derived(cityOptions.filter((city) => `${city.name} ${city.state}`.toLowerCase().includes(citySearch.trim().toLowerCase())).slice(0, 8));
 	let activeForecastItems = $derived($forecastData || []);
 
 	// The API response is the source of displayed forecast values; no synthetic AQI defaults.
@@ -64,6 +62,30 @@
 			status: item.value == null ? 'Unavailable' : item.value <= item.limit * 0.75 ? 'Good' : item.value <= item.limit ? 'Moderate' : 'High'
 		}));
 	});
+
+	$effect(() => {
+		getCities().then((response) => {
+			cityOptions = response.cities || [];
+			if (typeof localStorage !== 'undefined') {
+				try {
+					const saved = JSON.parse(localStorage.getItem('selectedCity') || 'null');
+					const match = cityOptions.find((city) => city.id === saved?.id);
+					if (match) activeCity = match;
+				} catch { /* ignore invalid saved city */ }
+			}
+		}).catch((error) => {
+			forecastError = error instanceof Error ? error.message : 'Unable to load supported cities.';
+		});
+	});
+
+	function selectForecastCity(city: City) {
+		activeCity = city;
+		citySearch = '';
+		showCitySuggestions = false;
+		selectedIndex = 0;
+		if (typeof localStorage !== 'undefined') localStorage.setItem('selectedCity', JSON.stringify(city));
+		window.dispatchEvent(new CustomEvent('aeriq:city-selected', { detail: city }));
+	}
 
 	async function refreshForecast(latitude: number, longitude: number) {
 		forecastLoading = true;
@@ -99,11 +121,6 @@
 		void refreshForecast(activeProfile.lat, activeProfile.lon);
 	});
 
-	// Reset selected index when city key shifts
-	$effect(() => {
-		activeCityKey;
-		selectedIndex = 0;
-	});
 </script>
 
 <div class="space-y-8 select-none relative animate-fade-in">
@@ -139,37 +156,30 @@
 
 		<!-- Location Selector and Refresh controls -->
 		<div class="flex items-center gap-2 flex-wrap">
-			<div class="flex items-center gap-1.5 p-1 bg-zinc-200/50 dark:bg-zinc-900 rounded-xl select-none border border-zinc-200/50 dark:border-zinc-800/50 shadow-sm">
-				<button
-					onclick={() => activeCityKey = 'delhi'}
-					class="px-2.5 py-1.5 text-xs font-bold rounded-lg transition-all focus:outline-none {activeCityKey === 'delhi' ? 'bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-450 shadow-sm' : 'text-zinc-550 hover:text-zinc-800 dark:hover:text-zinc-200'}"
-				>
-					Delhi
-				</button>
-				<button
-					onclick={() => activeCityKey = 'newyork'}
-					class="px-2.5 py-1.5 text-xs font-bold rounded-lg transition-all focus:outline-none {activeCityKey === 'newyork' ? 'bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-450 shadow-sm' : 'text-zinc-550 hover:text-zinc-800 dark:hover:text-zinc-200'}"
-				>
-					NY
-				</button>
-				<button
-					onclick={() => activeCityKey = 'london'}
-					class="px-2.5 py-1.5 text-xs font-bold rounded-lg transition-all focus:outline-none {activeCityKey === 'london' ? 'bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-450 shadow-sm' : 'text-zinc-550 hover:text-zinc-800 dark:hover:text-zinc-200'}"
-				>
-					London
-				</button>
-				<button
-					onclick={() => activeCityKey = 'tokyo'}
-					class="px-2.5 py-1.5 text-xs font-bold rounded-lg transition-all focus:outline-none {activeCityKey === 'tokyo' ? 'bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-450 shadow-sm' : 'text-zinc-550 hover:text-zinc-800 dark:hover:text-zinc-200'}"
-				>
-					Tokyo
-				</button>
-				<button
-					onclick={() => activeCityKey = 'sydney'}
-					class="px-2.5 py-1.5 text-xs font-bold rounded-lg transition-all focus:outline-none {activeCityKey === 'sydney' ? 'bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-450 shadow-sm' : 'text-zinc-550 hover:text-zinc-800 dark:hover:text-zinc-200'}"
-				>
-					Sydney
-				</button>
+			<div class="relative w-64">
+				<label class="sr-only" for="forecast-city-search">Choose a forecast city</label>
+				<input
+					id="forecast-city-search"
+					value={citySearch || activeProfile.name}
+					placeholder="Search cities..."
+					autocomplete="off"
+					onfocus={(event) => { event.currentTarget.select(); citySearch = ''; showCitySuggestions = true; }}
+					oninput={(event) => { citySearch = event.currentTarget.value; showCitySuggestions = true; }}
+					onkeydown={(event) => { if (event.key === 'Enter' && matchingCities[0]) { event.preventDefault(); selectForecastCity(matchingCities[0]); } else if (event.key === 'Escape') showCitySuggestions = false; }}
+					class="w-full rounded-xl border border-zinc-200 bg-white/70 px-3 py-2.5 text-sm font-semibold text-zinc-800 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-200"
+				/>
+				{#if showCitySuggestions}
+					<div class="absolute right-0 z-40 mt-2 max-h-72 w-full overflow-auto rounded-xl border border-zinc-200 bg-white p-1 shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
+						{#each matchingCities as city (city.id)}
+							<button type="button" onmousedown={(event) => event.preventDefault()} onclick={() => selectForecastCity(city)} class="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-emerald-50 dark:hover:bg-emerald-950/40">
+								<span class="font-semibold text-zinc-800 dark:text-zinc-100">{city.name}</span>
+								<span class="text-zinc-500">, {city.state}</span>
+							</button>
+						{:else}
+							<p class="px-3 py-2 text-sm text-zinc-500">{cityOptions.length ? 'No matching cities.' : 'Loading cities...'}</p>
+						{/each}
+					</div>
+				{/if}
 			</div>
 
 			<button

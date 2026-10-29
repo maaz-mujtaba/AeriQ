@@ -3,6 +3,7 @@
 	import { loggedIn, logout } from '$lib/stores/authStore.js';
 	import { getCities, serverWaking } from '$lib/api.js';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 
 	// Props using Svelte 5 bindable runes
 	let {
@@ -24,7 +25,10 @@
 
 	onMount(() => {
 		const onAuthChanged = () => { try { user = JSON.parse(localStorage.getItem('user') || 'null'); } catch { user = null; } };
+	/** @param {Event} event */
+	const onCitySelected = (event) => { const city = /** @type {CustomEvent<{ name?: string, state?: string }>} */ (event).detail; if (city?.name) currentCity = `${city.name}, ${city.state || ''}`.replace(/,\s*$/, ''); };
 		window.addEventListener('aeriq:auth-changed', onAuthChanged);
+		window.addEventListener('aeriq:city-selected', onCitySelected);
 		(async () => {
 			try { cities = (await getCities()).cities || []; }
 			catch (error) { cityLoadError = error instanceof Error ? error.message : 'Unable to load cities.'; }
@@ -32,7 +36,10 @@
 			const savedCity = localStorage.getItem('selectedCity');
 			if (savedCity) { try { const city = JSON.parse(savedCity); currentCity = `${city.name}, ${city.state}`; } catch { /* ignore invalid cache */ } }
 		})();
-		return () => window.removeEventListener('aeriq:auth-changed', onAuthChanged);
+		return () => {
+			window.removeEventListener('aeriq:auth-changed', onAuthChanged);
+			window.removeEventListener('aeriq:city-selected', onCitySelected);
+		};
 	});
 
 	/**
@@ -106,7 +113,8 @@
 			</svg>
 		</button>
 
-		<!-- Search Input (Desktop/Tablet) -->
+		<!-- The generic navbar search is not connected to Forecast actions. -->
+		{#if $page.url.pathname !== '/forecast'}
 		<div class="relative max-w-md w-full hidden sm:block">
 			<div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
 				<svg class="h-4.5 w-4.5 text-zinc-400 dark:text-zinc-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -124,6 +132,7 @@
 				</kbd>
 			</div>
 		</div>
+		{/if}
 	</div>
 
 	<!-- Right: Actions -->
