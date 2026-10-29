@@ -105,29 +105,6 @@
 			</a>
 		{/if}
 
-		<!-- Alerts -->
-		{#if $loggedIn}
-			<a
-				href="/alerts"
-				class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 group relative
-					{activePath === '/alerts'
-						? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 shadow-sm'
-						: 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/40 hover:text-zinc-900 dark:hover:text-zinc-200'}"
-				onclick={() => (isMobileOpen = false)}
-			>
-				<svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-				</svg>
-				{#if !isCollapsed}
-					<span class="transition-opacity duration-200">Alerts</span>
-				{:else}
-					<div class="absolute left-full ml-3 px-2 py-1 bg-zinc-900 dark:bg-zinc-800 text-white text-xs rounded shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none whitespace-nowrap z-50">
-						Alerts
-					</div>
-				{/if}
-			</a>
-		{/if}
-
 		<!-- AQI Map -->
 		{#if $loggedIn}
 			<a

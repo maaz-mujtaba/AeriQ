@@ -79,7 +79,7 @@
 				strokeColor: '#a855f7',
 				bgColor: 'bg-purple-500/10',
 				label: 'Very Unhealthy',
-				desc: 'Health alert: Everyone may experience more serious health effects.'
+				desc: 'Health advisory: Everyone may experience more serious health effects.'
 			};
 		} else {
 			return {

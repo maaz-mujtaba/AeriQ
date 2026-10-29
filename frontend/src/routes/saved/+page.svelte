@@ -9,7 +9,7 @@
 </svelte:head>
 
 {#if !$loggedIn}
-	<LoginRequired title="Saved Cities" description="Track, compare, and get push alert integrations for all your bookmarked locations and custom zones." />
+	<LoginRequired title="Saved Cities" description="Track and compare air quality across locations that matter to you." />
 {:else}
 	<div class="space-y-6">
 		<!-- Breadcrumbs and Header -->

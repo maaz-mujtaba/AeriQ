@@ -59,7 +59,7 @@
 		{
 			number: '04',
 			title: 'Understand',
-			description: 'View forecasts, health context, maps, alerts, and reports in one place.'
+			description: 'View forecasts, health context, maps, and reports in one place.'
 		}
 	];
 
@@ -197,7 +197,7 @@
 						class="mt-5 max-w-2xl text-base leading-7 text-zinc-600 dark:text-zinc-400"
 					>
 						AeriQ brings air-quality monitoring, forecasts, health context, location
-						intelligence, alerts, and reports together in one unified experience.
+						intelligence and reports together in one unified experience.
 					</p>
 
 					<div class="mt-7 flex flex-wrap gap-3">

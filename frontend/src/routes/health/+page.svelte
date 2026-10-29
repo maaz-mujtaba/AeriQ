@@ -255,7 +255,7 @@
 				level: isSensitive ? 'Severe Risk' : 'High Risk',
 				badgeClass: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
 				dotClass: 'bg-purple-500',
-				text: 'Health alert: High risk of aggravated symptoms for your condition. Limit outdoor exposure.'
+				text: 'Health advisory: High risk of aggravated symptoms for your condition. Limit outdoor exposure.'
 			};
 		} else {
 			return {
@@ -311,7 +311,7 @@
 {#if !$loggedIn}
 	<LoginRequired
 		title="Health Recommendations"
-		description="Access medical-backed health recommendations, air quality alerts, and activity schedules tailored for your active locations."
+		description="Access health recommendations and activity guidance tailored for your active locations."
 	/>
 {:else}
 	<div class="space-y-6 select-none max-w-7xl mx-auto">

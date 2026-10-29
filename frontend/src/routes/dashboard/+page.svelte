@@ -617,10 +617,9 @@
 	</div>
 
 	<!-- ==================== SECTION 8: Quick Stats ==================== -->
-	<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 z-10 relative">
+	<div class="grid grid-cols-2 lg:grid-cols-3 gap-4 z-10 relative">
 		<StatsCard title="Cities Monitored" value="250+" trend="+8 this week" trendType="up" icon="cities" />
 		<StatsCard title="Prediction Accuracy" value="94.2%" trend="+0.4% since v1.2" trendType="up" icon="accuracy" />
-		<StatsCard title="Alerts Sent" value="1,280" trend="-12% vs yesterday" trendType="down" icon="alerts" />
 		<StatsCard title="Air Quality Rank" value="#18" trend="Top 10% clean globally" trendType="neutral" icon="rank" />
 	</div>
 

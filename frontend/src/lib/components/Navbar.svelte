@@ -12,7 +12,6 @@
 
 	// Dropdown states
 	let isCityDropdownOpen = $state(false);
-	let isNotificationOpen = $state(false);
 	let isUserDropdownOpen = $state(false);
 	let currentCity = $state('New Delhi, India');
 	/** @type {{ id: string, name: string, state: string, latitude: number, longitude: number }[]} */
@@ -42,20 +41,12 @@
 	function toggleCityDropdown(e) {
 		e.stopPropagation();
 		isCityDropdownOpen = !isCityDropdownOpen;
-		isNotificationOpen = false;
 		isUserDropdownOpen = false;
 	}
 
 	/**
 	 * @param {MouseEvent} e
 	 */
-	function toggleNotificationDropdown(e) {
-		e.stopPropagation();
-		isNotificationOpen = !isNotificationOpen;
-		isCityDropdownOpen = false;
-		isUserDropdownOpen = false;
-	}
-
 	/**
 	 * @param {MouseEvent} e
 	 */
@@ -63,7 +54,6 @@
 		e.stopPropagation();
 		isUserDropdownOpen = !isUserDropdownOpen;
 		isCityDropdownOpen = false;
-		isNotificationOpen = false;
 	}
 
 	/**
@@ -78,7 +68,6 @@
 
 	function closeAllDropdowns() {
 		isCityDropdownOpen = false;
-		isNotificationOpen = false;
 		isUserDropdownOpen = false;
 	}
 
@@ -177,33 +166,6 @@
 						</button>
 					{/each}
 					{#if !visibleCities.length}<p class="px-3 py-2 text-xs text-zinc-500">{cityLoadError || 'No matching cities found.'}</p>{/if}
-				</div>
-			{/if}
-		</div>
-
-		<!-- Notifications Menu -->
-		<div class="relative">
-			<button
-				onclick={toggleNotificationDropdown}
-				class="p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-50 hover:bg-zinc-50 dark:hover:bg-zinc-900/60 shadow-sm relative focus:outline-none transition-all duration-150"
-				aria-label="View notifications"
-			>
-				<svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-				</svg>
-				<!-- Active notification badge -->
-			</button>
-
-			<!-- Dropdown Menu -->
-			{#if isNotificationOpen}
-				<div class="absolute right-0 mt-2 w-72 sm:w-80 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-xl shadow-lg shadow-zinc-200/50 dark:shadow-black/40 overflow-hidden py-1 z-40">
-					<div class="px-4 py-2.5 border-b border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between">
-						<span class="text-xs font-bold text-zinc-800 dark:text-zinc-200">Notifications</span>
-						<span class="text-[10px] text-zinc-400">Live alerts</span>
-					</div>
-					<div class="divide-y divide-zinc-100 dark:divide-zinc-800/50 max-h-64 overflow-y-auto">
-						<p class="p-4 text-xs text-zinc-500">No new alerts.</p>
-					</div>
 				</div>
 			{/if}
 		</div>

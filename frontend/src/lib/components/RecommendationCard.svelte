@@ -42,7 +42,7 @@
 				outdoor: 'Limit exposure. Stay inside during peak smog periods.',
 				mask: 'Recommended. Equip standard N95 particulate mask before exit.',
 				exercise: 'Reduced. Perform stretching and warmups inside.',
-				sensitive: 'High alert. Children and elderly should remain in indoor zones.',
+				sensitive: 'Very high risk. Children and elderly should remain indoors.',
 				color: '#ef4444',
 				bgClass: 'bg-orange-500/10 text-orange-755 dark:text-orange-400 border-orange-500/20',
 				iconColorClass: 'text-orange-500',
