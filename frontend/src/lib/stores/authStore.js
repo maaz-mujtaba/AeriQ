@@ -46,8 +46,6 @@ export const protectedRoutes = [
 	'/map',
 	'/aqi-map',
 	'/health',
-	'/saved',
-	'/saved-cities',
 	'/reports'
 ];
 
