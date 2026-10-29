@@ -69,7 +69,8 @@ export const signIn = (credentials) => apiRequest('/auth/login', { method: 'POST
 export const signUp = (profile) => apiRequest('/auth/register', { method: 'POST', body: JSON.stringify(profile) });
 /** @param {string} city */
 export const predictCityAQI = (city) => apiRequest(`/predict/${encodeURIComponent(city)}`);
-export const getCities = () => apiRequest('/cities/all');
+/** @param {string} [search] */
+export const getCities = (search) => apiRequest(search ? `/cities?search=${encodeURIComponent(search)}&limit=20` : '/cities/all');
 export const getCurrentUser = () => apiRequest('/auth/me');
 /** @param {string} city */
 export const assessHealthRisk = (city) => apiRequest('/health/assess', { method: 'POST', body: JSON.stringify({ city }) });

@@ -14,6 +14,8 @@
 	/** @type {CityAQI | null} */
 	let selectedCity = $state(null);
 	let searchError = $state('');
+	let searchNotice = $state('');
+	let searchLoading = $state(false);
 	let isLegendOpen = $state(true);
 	/** @type {CityAQI[]} */
 	let aqiMockData = $state([]);
@@ -23,6 +25,8 @@
 	// Leaflet instance (loaded dynamically to avoid SSR issues)
 	/** @type {any} */
 	let L = null;
+	/** @type {any} */
+	let searchMarker = null;
 
 	onMount(async () => {
 		// Dynamically import Leaflet (browser-only)
@@ -116,6 +120,10 @@
 		if (!map || !L) return;
 		markers.forEach(({ marker }) => marker.remove());
 		markers = [];
+		if (searchMarker) {
+			searchMarker.remove();
+			searchMarker = null;
+		}
 
 		aqiMockData.forEach((cityData) => {
 			const color = getAqiColor(cityData.aqi);
@@ -169,8 +177,9 @@
 		searchError = '';
 	}
 
-	function handleSearch() {
+	async function handleSearch() {
 		searchError = '';
+		searchNotice = '';
 		const query = searchQuery.trim().toLowerCase();
 
 		if (!query) {
@@ -181,24 +190,70 @@
 		const found = aqiMockData.find((c) => c.city.toLowerCase() === query || `${c.city}, ${c.state}`.toLowerCase() === query);
 
 		if (found) {
-			selectCity(found);
-			if (map) {
-				map.setView([found.latitude, found.longitude], 10, { animate: true });
+			focusCity(found);
+			return;
+		}
+
+		searchLoading = true;
+		try {
+			// Search the backend's full city catalogue instead of only the handful
+			// of AQI markers initially loaded on the map.
+			const response = await getCities(searchQuery.trim());
+			const cities = /** @type {{ name: string, state: string, latitude: number, longitude: number }[]} */ (response?.cities || []);
+			const city = cities.find((item) => item.name.toLowerCase() === query || `${item.name}, ${item.state}`.toLowerCase() === query)
+				|| cities.find((item) => item.name.toLowerCase().startsWith(query))
+				|| cities[0];
+			if (!city) {
+				searchError = `No city matching “${searchQuery.trim()}” was found.`;
+				selectedCity = null;
+				return;
 			}
-			// Highlight the marker with a brief pulse
-			const markerEntry = markers.find((m) => m.data.city === found.city);
-			if (markerEntry) {
-				const el = markerEntry.marker.getElement();
-				if (el) {
-					el.style.transform += ' scale(1.3)';
-					setTimeout(() => {
-						el.style.transform = el.style.transform.replace(' scale(1.3)', '');
-					}, 600);
+
+			let cityData;
+			try {
+				const reading = await predictCityAQI(city.name);
+				cityData = {
+					city: reading.city || city.name, state: reading.state || city.state,
+					latitude: reading.latitude ?? city.latitude, longitude: reading.longitude ?? city.longitude,
+					aqi: reading.aqi, mainPollutant: 'PM2.5', pm25: reading.pm25, pm10: reading.pm10,
+					no2: reading.no2, so2: reading.so2, co: reading.co, o3: reading.o3,
+					lastUpdated: reading.timestamp ? new Date(reading.timestamp).toLocaleString() : 'Recently'
+				};
+			} catch (error) {
+				// Still locate and mark the requested city if the live AQI provider is down.
+				if (map && L) {
+					if (searchMarker) searchMarker.remove();
+					map.setView([city.latitude, city.longitude], 10, { animate: true });
+					searchMarker = L.circleMarker([city.latitude, city.longitude], {
+						radius: 10, color: '#ffffff', weight: 3, fillColor: '#10b981', fillOpacity: 1
+					}).addTo(map).bindTooltip(city.name, { permanent: true, direction: 'top', className: 'aqi-tooltip' });
 				}
+				selectedCity = null;
+				searchNotice = `${city.name} is shown on the map, but its live AQI could not be loaded. ${error instanceof Error ? error.message : ''}`.trim();
+				return;
 			}
-		} else {
-			searchError = 'City not found.';
-			selectedCity = null;
+
+			const existingIndex = aqiMockData.findIndex((item) => item.city.toLowerCase() === cityData.city.toLowerCase());
+			if (existingIndex >= 0) aqiMockData[existingIndex] = cityData;
+			else aqiMockData = [...aqiMockData, cityData];
+			if (map) addMarkers();
+			focusCity(cityData);
+		} catch (error) {
+			searchError = error instanceof Error ? error.message : 'Unable to search the city catalogue.';
+		} finally {
+			searchLoading = false;
+		}
+	}
+
+	/** @param {CityAQI} cityData */
+	function focusCity(cityData) {
+		selectCity(cityData);
+		if (map) map.setView([cityData.latitude, cityData.longitude], 10, { animate: true });
+		const markerEntry = markers.find((item) => item.data.city.toLowerCase() === cityData.city.toLowerCase());
+		const element = markerEntry?.marker.getElement();
+		if (element) {
+			element.style.transform += ' scale(1.3)';
+			setTimeout(() => { element.style.transform = element.style.transform.replace(' scale(1.3)', ''); }, 600);
 		}
 	}
 
@@ -237,15 +292,17 @@
 				type="text"
 				bind:value={searchQuery}
 				onkeydown={handleSearchKeydown}
+				aria-busy={searchLoading}
 				placeholder="Search for a city..."
 				class="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 rounded-xl text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
 			/>
 		</div>
 		<button
 			onclick={handleSearch}
-			class="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white text-sm font-semibold rounded-xl transition-all shadow-md shadow-emerald-500/10 focus:outline-none cursor-pointer"
+			disabled={searchLoading}
+			class="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white text-sm font-semibold rounded-xl transition-all shadow-md shadow-emerald-500/10 focus:outline-none cursor-pointer disabled:cursor-wait disabled:opacity-60"
 		>
-			Search
+			{searchLoading ? 'Searching…' : 'Search'}
 		</button>
 	</div>
 
@@ -253,6 +310,9 @@
 		<div class="mb-3 px-4 py-2.5 bg-red-50 dark:bg-red-950/20 border border-red-200/60 dark:border-red-800/40 rounded-xl text-sm text-red-600 dark:text-red-400 font-medium">
 			{searchError}
 		</div>
+	{/if}
+	{#if searchNotice}
+		<div role="status" class="mb-3 px-4 py-2.5 bg-amber-50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-800/40 rounded-xl text-sm text-amber-700 dark:text-amber-300 font-medium">{searchNotice}</div>
 	{/if}
 
 	<!-- Map + Details Layout -->
