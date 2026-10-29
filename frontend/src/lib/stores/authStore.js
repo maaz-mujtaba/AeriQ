@@ -32,6 +32,7 @@ export function logout() {
 }
 
 export const protectedRoutes = [
+	'/profile',
 	'/forecast',
 	'/alerts',
 	'/map',

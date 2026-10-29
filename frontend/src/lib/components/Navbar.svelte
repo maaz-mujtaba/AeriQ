@@ -227,7 +227,7 @@
 							<p class="text-[10px] text-zinc-400 dark:text-zinc-500 truncate">{user?.email || ''}</p>
 						</div>
 						<div class="py-1">
-							<a href="/settings" onclick={closeAllDropdowns} class="flex items-center gap-2 px-3.5 py-2 text-sm text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">
+							<a href="/profile" onclick={closeAllDropdowns} class="flex items-center gap-2 px-3.5 py-2 text-sm text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">
 								<svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
 								</svg>
