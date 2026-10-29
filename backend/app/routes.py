@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import Optional, List
 from datetime import datetime
 import json
+import logging
 from collections import defaultdict
 import requests
 from sqlalchemy.orm import Session
@@ -49,18 +50,24 @@ from app.config import settings
 # ============================================
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+def _prediction_from_observations(data):
+    features = {key: data.get(key) for key in ("pm25", "pm10", "no2", "so2", "o3", "co", "temperature", "humidity", "wind_speed")}
+    aqi, source = get_predictor().predict_with_source(features)
+    if aqi is None:
+        aqi = calculate_aqi_from_pm25(data.get("pm25"))
+        source = "cpcb_fallback" if aqi is not None else "unavailable"
+    return (int(round(aqi)) if aqi is not None else None), source
 
 
 def _predict_from_observations(data):
-    features = {key: data.get(key) for key in ("pm25", "pm10", "no2", "so2", "o3", "co", "temperature", "humidity", "wind_speed")}
-    aqi = predict_aqi(features)
-    if aqi is None:
-        aqi = calculate_aqi_from_pm25(data.get("pm25"))
-    return int(round(aqi)) if aqi is not None else None
+    return _prediction_from_observations(data)[0]
 
 
 def _aqi_response(city, state, latitude, longitude, data):
-    aqi = _predict_from_observations(data)
+    aqi, prediction_source = _prediction_from_observations(data)
     category, color = get_aqi_category(aqi)
     return AQIResponse(
         city=city, state=state, latitude=latitude, longitude=longitude, aqi=aqi,
@@ -68,8 +75,22 @@ def _aqi_response(city, state, latitude, longitude, data):
         no2=data.get("no2"), so2=data.get("so2"), o3=data.get("o3"), co=data.get("co"),
         temperature=data.get("temperature"), humidity=data.get("humidity"),
         wind_speed=data.get("wind_speed"), timestamp=data.get("timestamp"),
-        prediction_source="ml_model" if get_predictor().is_loaded else "cpcb_fallback"
+        prediction_source=prediction_source
     )
+
+
+@router.get("/model/status")
+async def model_status():
+    """Expose non-sensitive model readiness details for the forecast UI."""
+    info = get_predictor().get_model_info()
+    return {
+        "is_loaded": info["is_loaded"],
+        "model_type": info.get("model_type", "RandomForestRegressor" if info["is_loaded"] else None),
+        "n_estimators": info.get("n_estimators"),
+        "feature_names": info.get("feature_names") or [],
+        "has_scaler": info.get("has_scaler", False),
+        "fallback": "CPCB PM2.5 AQI formula",
+    }
 
 
 # ============================================
@@ -202,10 +223,13 @@ async def aqi_forecast(latitude: float = Query(..., ge=-90, le=90), longitude: f
         if not valid:
             continue
         average = {key: sum(float(row[key]) for row in valid if row.get(key) is not None) / max(1, sum(row.get(key) is not None for row in valid)) if any(row.get(key) is not None for row in valid) else None for key in forecast_fields}
-        aqi = _predict_from_observations(average)
+        aqi, prediction_source = _prediction_from_observations(average)
         category, color = get_aqi_category(aqi)
-        forecast.append({"day": "Today" if day_offset == 0 else datetime.fromisoformat(date).strftime("%A"), "date": date, "aqi": aqi, "aqi_category": category, "aqi_color": color, "temperature": average["temperature"], "temp_high": max((r["temperature"] for r in valid if r.get("temperature") is not None), default=None), "temp_low": min((r["temperature"] for r in valid if r.get("temperature") is not None), default=None), "humidity": average["humidity"], "wind_speed": average["wind_speed"], "weather_desc": "Forecast from Open-Meteo", "trend_direction": "flat", "chance_of_improvement": None})
-    return {"forecast": forecast, "latitude": latitude, "longitude": longitude, "source": "open-meteo + aeriq model"}
+        forecast.append({"day": "Today" if day_offset == 0 else datetime.fromisoformat(date).strftime("%A"), "date": date, "aqi": aqi, "aqi_category": category, "aqi_color": color, "temperature": average["temperature"], "temp_high": max((r["temperature"] for r in valid if r.get("temperature") is not None), default=None), "temp_low": min((r["temperature"] for r in valid if r.get("temperature") is not None), default=None), "humidity": average["humidity"], "wind_speed": average["wind_speed"], "weather_desc": "Forecast from Open-Meteo", "trend_direction": "flat", "chance_of_improvement": None, "pollutants": {key: average[key] for key in fields}, "prediction_source": prediction_source})
+    if not forecast:
+        raise HTTPException(status_code=503, detail="No pollutant forecast data is available for this location right now.")
+    model_info = get_predictor().get_model_info()
+    return {"forecast": forecast, "latitude": latitude, "longitude": longitude, "source": "Open-Meteo + AeriQ", "prediction_method": "RandomForestRegressor" if model_info["is_loaded"] else "CPCB PM2.5 fallback", "model_loaded": model_info["is_loaded"]}
 
 
 @router.get("/weather/hourly")

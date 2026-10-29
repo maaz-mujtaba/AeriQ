@@ -87,26 +87,26 @@ class AQIPredictor:
             self.is_loaded = False
             return False
     
-    def predict(self, features: Dict[str, float]) -> Optional[float]:
+    def predict_with_source(self, features: Dict[str, float]):
         """
-        Predict AQI from input features.
+        Predict AQI and identify whether the ML model or CPCB fallback produced it.
         
         Args:
             features: Dict with keys: pm25, pm10, no2, so2, o3, co,
                      temperature, humidity, wind_speed
         
         Returns:
-            Predicted AQI (0-500) or None if prediction fails
+            Tuple of (AQI, prediction source)
         """
         # Validate input
         if not features:
             logger.warning("Empty features provided for prediction")
-            return None
+            return None, "unavailable"
         
         # If model is not loaded, use fallback
         if not self.is_loaded:
             logger.debug("Model not loaded, using fallback")
-            return self._fallback_predict(features)
+            return self._fallback_predict(features), "cpcb_fallback"
         
         try:
             # Prepare input data
@@ -126,12 +126,16 @@ class AQIPredictor:
             aqi = max(0, min(500, aqi))
             
             logger.debug(f"✅ ML Prediction: {aqi}")
-            return aqi
+            return aqi, "ml_model"
             
         except Exception as e:
             logger.error(f"⚠️ Prediction error: {e}")
             # Fallback to PM2.5 formula
-            return self._fallback_predict(features)
+            return self._fallback_predict(features), "cpcb_fallback"
+
+    def predict(self, features: Dict[str, float]) -> Optional[float]:
+        """Predict AQI using the loaded model or its CPCB fallback."""
+        return self.predict_with_source(features)[0]
     
     def _prepare_input(self, features: Dict[str, float]) -> pd.DataFrame:
         """
@@ -282,6 +286,12 @@ def predict_aqi(features: Dict[str, float]) -> Optional[float]:
     """
     predictor = get_predictor()
     return predictor.predict(features)
+
+
+def predict_aqi_with_source(features: Dict[str, float]):
+    """Return the AQI prediction together with its actual production method."""
+    predictor = get_predictor()
+    return predictor.predict_with_source(features)
 
 
 def predict_aqi_batch(features_list: List[Dict[str, float]]) -> List[Optional[float]]:
