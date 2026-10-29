@@ -107,6 +107,14 @@ class AQIPredictor:
         if not self.is_loaded:
             logger.debug("Model not loaded, using fallback")
             return self._fallback_predict(features), "cpcb_fallback"
+
+        # The deployed model was trained on 70 engineered features, including
+        # 1/3/6/12/24-hour pollutant lags and rolling windows. A single current
+        # observation cannot satisfy that contract; never silently zero-fill it.
+        missing = [name for name in (self.feature_names or []) if name not in features or features[name] is None]
+        if missing:
+            logger.info("Insufficient history for trained model (%d features missing); using CPCB PM2.5 calculation", len(missing))
+            return self._fallback_predict(features), "cpcb_fallback"
         
         try:
             # Prepare input data
@@ -132,6 +140,53 @@ class AQIPredictor:
             logger.error(f"⚠️ Prediction error: {e}")
             # Fallback to PM2.5 formula
             return self._fallback_predict(features), "cpcb_fallback"
+
+    def predict_from_history(self, observation: Dict[str, Any], history: List[Dict[str, Any]]):
+        """Predict one timestamp using the same lag and rolling features as training."""
+        if not self.is_loaded:
+            return self._fallback_predict(observation), "cpcb_fallback"
+
+        try:
+            timestamp = pd.to_datetime(observation.get("timestamp"))
+            ordered = sorted(history, key=lambda row: str(row.get("timestamp", "")))
+            if pd.isna(timestamp) or len(ordered) < 24:
+                return self._fallback_predict(observation), "cpcb_fallback"
+
+            values = {}
+            for name in ("pm25", "pm10", "no2", "so2", "o3", "co", "temperature", "humidity", "wind_speed"):
+                values[name] = float(observation[name]) if observation.get(name) is not None else None
+
+            hour = timestamp.hour
+            dow = timestamp.dayofweek
+            month = timestamp.month
+            values.update({
+                "hour_sin": np.sin(2 * np.pi * hour / 24),
+                "hour_cos": np.cos(2 * np.pi * hour / 24),
+                "dow_sin": np.sin(2 * np.pi * dow / 7),
+                "dow_cos": np.cos(2 * np.pi * dow / 7),
+                "season": {12: 0, 1: 0, 2: 0, 3: 1, 4: 1, 5: 1, 6: 2, 7: 2, 8: 2, 9: 3, 10: 3, 11: 3}[month],
+            })
+
+            pollutants = ("pm25", "pm10", "no2", "so2", "o3", "co")
+            weather = ("temperature", "humidity", "wind_speed")
+            for name in pollutants:
+                series = [row.get(name) for row in ordered]
+                for lag in (1, 3, 6, 12, 24):
+                    item = series[-lag]
+                    values[f"{name}_lag_{lag}h"] = float(item) if item is not None else None
+                for window in (6, 12, 24):
+                    window_values = [float(item) for item in series[-window:] if item is not None]
+                    values[f"{name}_rolling_{window}h"] = float(np.mean(window_values)) if len(window_values) == window else None
+            for name in weather:
+                series = [row.get(name) for row in ordered]
+                for window in (6, 12, 24):
+                    window_values = [float(item) for item in series[-window:] if item is not None]
+                    values[f"{name}_rolling_{window}h"] = float(np.mean(window_values)) if len(window_values) == window else None
+
+            return self.predict_with_source(values)
+        except (TypeError, ValueError, KeyError, OverflowError) as exc:
+            logger.warning("Unable to construct model history features: %s", exc)
+            return self._fallback_predict(observation), "cpcb_fallback"
 
     def predict(self, features: Dict[str, float]) -> Optional[float]:
         """Predict AQI using the loaded model or its CPCB fallback."""

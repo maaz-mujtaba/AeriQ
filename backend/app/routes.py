@@ -54,12 +54,10 @@ logger = logging.getLogger(__name__)
 
 
 def _prediction_from_observations(data):
-    features = {key: data.get(key) for key in ("pm25", "pm10", "no2", "so2", "o3", "co", "temperature", "humidity", "wind_speed")}
-    aqi, source = get_predictor().predict_with_source(features)
-    if aqi is None:
-        aqi = calculate_aqi_from_pm25(data.get("pm25"))
-        source = "cpcb_fallback" if aqi is not None else "unavailable"
-    return (int(round(aqi)) if aqi is not None else None), source
+    # The trained model predicts a future value from lagged observations.
+    # Current readings lack that history, so use the CPCB PM2.5 sub-index.
+    aqi = calculate_aqi_from_pm25(data.get("pm25"))
+    return aqi, "cpcb_pm25" if aqi is not None else "unavailable"
 
 
 def _predict_from_observations(data):
@@ -124,24 +122,7 @@ async def predict_city_aqi(request: CityRequest) -> AQIResponse:
             detail="Unable to fetch air quality data. Please try again later."
         )
     
-    predicted_aqi = predict_aqi({
-        "pm25": data["pm25"],
-        "pm10": data["pm10"],
-        "no2": data["no2"],
-        "so2": data["so2"],
-        "o3": data["o3"],
-        "co": data["co"],
-        "temperature": data["temperature"],
-        "humidity": data["humidity"],
-        "wind_speed": data["wind_speed"],
-    })
-    
-    if predicted_aqi is None:
-        predicted_aqi = calculate_aqi_from_pm25(data["pm25"])
-        prediction_source = "cpcb_fallback"
-    else:
-        predicted_aqi = int(round(predicted_aqi))
-        prediction_source = "ml_model"
+    predicted_aqi, prediction_source = _prediction_from_observations(data)
     
     category, color = get_aqi_category(predicted_aqi)
     
@@ -188,34 +169,50 @@ async def current_aqi(latitude: float = Query(..., ge=-90, le=90), longitude: fl
 async def aqi_forecast(latitude: float = Query(..., ge=-90, le=90), longitude: float = Query(..., ge=-180, le=180)):
     """Build three daily AQI projections from Open-Meteo forecast pollutants and the configured model."""
     params = {
-        "latitude": latitude, "longitude": longitude, "forecast_days": 3,
+        "latitude": latitude, "longitude": longitude, "past_days": 1, "forecast_days": 3,
         "hourly": "pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,ozone,carbon_monoxide",
         "timezone": "auto"
     }
     try:
         response = requests.get(settings.open_meteo_base_url, params=params, timeout=settings.open_meteo_timeout)
         response.raise_for_status()
-        hourly = response.json().get("hourly", {})
+        air_payload = response.json()
+        hourly = air_payload.get("hourly", {})
     except requests.RequestException as exc:
         raise HTTPException(status_code=503, detail="AQI forecast is temporarily unavailable.") from exc
     times = hourly.get("time", [])
-    forecast_dates = list(dict.fromkeys(stamp[:10] for stamp in times))[:3]
-    grouped = defaultdict(list)
+    from zoneinfo import ZoneInfo
+    local_now = datetime.now(ZoneInfo(air_payload.get("timezone", "UTC")))
+    today = local_now.strftime("%Y-%m-%d")
+    forecast_dates = list(dict.fromkeys(stamp[:10] for stamp in times if stamp[:10] >= today))[:3]
     fields = {"pm25": "pm2_5", "pm10": "pm10", "no2": "nitrogen_dioxide", "so2": "sulphur_dioxide", "o3": "ozone", "co": "carbon_monoxide"}
     weather_by_time = {}
     try:
-        weather_response = requests.get("https://api.open-meteo.com/v1/forecast", params={"latitude": latitude, "longitude": longitude, "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m", "forecast_days": 3, "timezone": "auto"}, timeout=settings.open_meteo_timeout)
+        weather_response = requests.get("https://api.open-meteo.com/v1/forecast", params={"latitude": latitude, "longitude": longitude, "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m", "past_days": 1, "forecast_days": 3, "timezone": "auto"}, timeout=settings.open_meteo_timeout)
         weather_response.raise_for_status()
         weather_hourly = weather_response.json().get("hourly", {})
         weather_times = weather_hourly.get("time", [])
         weather_by_time = {stamp: {"temperature": (weather_hourly.get("temperature_2m") or [None] * len(weather_times))[i], "humidity": (weather_hourly.get("relative_humidity_2m") or [None] * len(weather_times))[i], "wind_speed": (weather_hourly.get("wind_speed_10m") or [None] * len(weather_times))[i]} for i, stamp in enumerate(weather_times)}
     except requests.RequestException:
         logger.warning("Weather forecast conditions are unavailable")
+    observations = []
+    current_time = local_now.strftime("%Y-%m-%dT%H:%M")
     for index, stamp in enumerate(times):
-        if stamp[:10] in forecast_dates:
-            row = {key: (hourly.get(field) or [None] * len(times))[index] for key, field in fields.items()}
-            row.update(weather_by_time.get(stamp, {}))
-            grouped[stamp[:10]].append(row)
+        row = {key: (hourly.get(field) or [None] * len(times))[index] for key, field in fields.items()}
+        row.update(weather_by_time.get(stamp, {}))
+        row["timestamp"] = stamp
+        observations.append(row)
+
+    grouped = defaultdict(list)
+    for index, row in enumerate(observations):
+        date = row["timestamp"][:10]
+        if date not in forecast_dates or row["timestamp"] < current_time:
+            continue
+        prior_observations = observations[max(0, index - 24):index]
+        aqi, prediction_source = get_predictor().predict_from_history(row, prior_observations)
+        row["predicted_aqi"] = aqi
+        row["prediction_source"] = prediction_source
+        grouped[date].append(row)
     forecast = []
     forecast_fields = (*fields.keys(), "temperature", "humidity", "wind_speed")
     for day_offset, (date, rows) in enumerate(sorted(grouped.items())):
@@ -223,7 +220,10 @@ async def aqi_forecast(latitude: float = Query(..., ge=-90, le=90), longitude: f
         if not valid:
             continue
         average = {key: sum(float(row[key]) for row in valid if row.get(key) is not None) / max(1, sum(row.get(key) is not None for row in valid)) if any(row.get(key) is not None for row in valid) else None for key in forecast_fields}
-        aqi, prediction_source = _prediction_from_observations(average)
+        predicted_values = [row["predicted_aqi"] for row in valid if row.get("predicted_aqi") is not None]
+        aqi = int(round(sum(predicted_values) / len(predicted_values))) if predicted_values else calculate_aqi_from_pm25(average["pm25"])
+        source_counts = {source: sum(row.get("prediction_source") == source for row in valid) for source in ("ml_model", "cpcb_fallback")}
+        prediction_source = max(source_counts, key=source_counts.get) if max(source_counts.values(), default=0) else "cpcb_fallback"
         category, color = get_aqi_category(aqi)
         forecast.append({"day": "Today" if day_offset == 0 else datetime.fromisoformat(date).strftime("%A"), "date": date, "aqi": aqi, "aqi_category": category, "aqi_color": color, "temperature": average["temperature"], "temp_high": max((r["temperature"] for r in valid if r.get("temperature") is not None), default=None), "temp_low": min((r["temperature"] for r in valid if r.get("temperature") is not None), default=None), "humidity": average["humidity"], "wind_speed": average["wind_speed"], "weather_desc": "Forecast from Open-Meteo", "trend_direction": "flat", "chance_of_improvement": None, "pollutants": {key: average[key] for key in fields}, "prediction_source": prediction_source})
     if not forecast:

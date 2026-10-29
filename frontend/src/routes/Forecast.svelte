@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { forecastData, weatherHourly } from '$lib/stores/aqiStore.js';
-	import { getModelStatus, loadAQIForecast, loadWeatherHourly } from '$lib/api.js';
+	import { getCurrentAQI, getModelStatus, loadAQIForecast, loadWeatherHourly } from '$lib/api.js';
 
 	// Component imports
 	import ForecastChart from '$lib/components/ForecastChart.svelte';
@@ -39,6 +39,8 @@
 	let modelStatus: { is_loaded: boolean; model_type?: string; n_estimators?: number; feature_names?: string[]; has_scaler?: boolean } | null = $state(null);
 	let forecastMeta: { prediction_method?: string; model_loaded?: boolean; source?: string } | null = $state(null);
 	let lastSyncedAt = $state('');
+	let currentReading: { aqi?: number; aqi_category?: string; pm25?: number; timestamp?: string; prediction_source?: string } | null = $state(null);
+	let currentReadingError = $state('');
 
 	const weatherTabKeys = Object.keys(weatherTabConfigs) as Array<keyof typeof weatherTabConfigs>;
 
@@ -67,10 +69,11 @@
 		forecastLoading = true;
 		forecastError = '';
 		modelError = '';
-		const [forecastResult, _weatherResult, modelResult] = await Promise.allSettled([
+		const [forecastResult, _weatherResult, modelResult, currentResult] = await Promise.allSettled([
 			loadAQIForecast(latitude, longitude),
 			loadWeatherHourly(latitude, longitude),
-			getModelStatus()
+			getModelStatus(),
+			getCurrentAQI(latitude, longitude)
 		]);
 		if (forecastResult.status === 'fulfilled') {
 			forecastMeta = forecastResult.value;
@@ -81,6 +84,8 @@
 		}
 		if (modelResult.status === 'fulfilled') modelStatus = modelResult.value;
 		else modelError = modelResult.reason instanceof Error ? modelResult.reason.message : 'Model status is unavailable.';
+		if (currentResult.status === 'fulfilled') { currentReading = currentResult.value; currentReadingError = ''; }
+		else { currentReading = null; currentReadingError = currentResult.reason instanceof Error ? currentResult.reason.message : 'Current air quality is unavailable.'; }
 		forecastLoading = false;
 	}
 
@@ -207,7 +212,7 @@
 			<p class="mt-1 text-sm font-bold text-zinc-900 dark:text-white">
 				{selectedDayData?.prediction_source === 'ml_model' ? 'ML prediction' : selectedDayData?.prediction_source === 'cpcb_fallback' ? 'CPCB fallback prediction' : forecastMeta?.prediction_method || 'Awaiting forecast'}
 			</p>
-			<p class="mt-2 text-xs text-zinc-500 dark:text-zinc-400">Daily pollutant and weather forecast averages are sent to the prediction engine. AQI and pollutant values below come from that response.</p>
+			<p class="mt-2 text-xs text-zinc-500 dark:text-zinc-400">The model uses hourly pollutant history and weather features. Forecast AQI is averaged from hourly predictions; current AQI is shown separately.</p>
 		</section>
 	</div>
 	{#if forecastError}
@@ -231,13 +236,13 @@
 				<div class="flex flex-col justify-between h-full space-y-4">
 					<div class="space-y-1">
 						<span class="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">Air Index</span>
-						<h3 class="text-xl font-black text-zinc-900 dark:text-white">Today's AQI</h3>
+						<h3 class="text-xl font-black text-zinc-900 dark:text-white">Current AQI estimate</h3>
 					</div>
 
 					<div class="space-y-1.5">
 						<div class="flex items-baseline gap-2">
 							<span class="text-4xl font-black text-zinc-900 dark:text-white tracking-tight leading-none">
-								{selectedDayData.aqi}
+								{currentReading?.aqi ?? '—'}
 							</span>
 							<span class="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">AQI</span>
 							<span class="text-xs font-black text-emerald-500 flex items-center">
@@ -258,15 +263,15 @@
 							<p class="text-zinc-800 dark:text-zinc-200 font-extrabold mt-0.5">PM2.5</p>
 						</div>
 						<div>
-							<p class="uppercase text-[8px] tracking-wider text-zinc-400 dark:text-zinc-550">Updated</p>
-							<p class="text-zinc-850 dark:text-zinc-200 mt-0.5 truncate">{selectedDayData.date || 'Daily forecast'}</p>
+							<p class="uppercase text-[8px] tracking-wider text-zinc-400 dark:text-zinc-550">PM2.5</p>
+							<p class="text-zinc-850 dark:text-zinc-200 mt-0.5 truncate">{currentReading?.pm25 == null ? 'Unavailable' : `${currentReading.pm25} µg/m³`}</p>
 						</div>
 					</div>
 				</div>
 
 				<!-- Small Gauge on right -->
 				<div class="shrink-0 flex items-center justify-center">
-					<AQIGauge aqi={selectedDayData.aqi} />
+					<AQIGauge aqi={currentReading?.aqi ?? 0} />
 				</div>
 			</div>
 		</div>
@@ -289,8 +294,8 @@
 		<!-- CARD 3: Health Advisory -->
 		<div>
 			<RecommendationCard
-				aqi={selectedDayData.aqi}
-				category={selectedDayData.aqi_category}
+				aqi={currentReading?.aqi ?? selectedDayData.aqi}
+				category={currentReading?.aqi_category ?? selectedDayData.aqi_category}
 			/>
 		</div>
 	</div>
