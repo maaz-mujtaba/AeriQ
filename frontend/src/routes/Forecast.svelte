@@ -41,9 +41,13 @@
 
 	const weatherTabKeys = Object.keys(weatherTabConfigs) as Array<keyof typeof weatherTabConfigs>;
 
-	let activeProfile = $derived({ name: `${activeCity.name}, ${activeCity.state}`, lat: activeCity.latitude, lon: activeCity.longitude });
+	let activeProfile = $derived({ name: cityLabel(activeCity), lat: activeCity.latitude, lon: activeCity.longitude });
 	let matchingCities = $derived(cityOptions.filter((city) => `${city.name} ${city.state}`.toLowerCase().includes(citySearch.trim().toLowerCase())).slice(0, 8));
 	let activeForecastItems = $derived($forecastData || []);
+
+	function cityLabel(city: City) {
+		return city.state && city.state.toLowerCase() !== 'unknown' ? `${city.name}, ${city.state}` : city.name;
+	}
 
 	// The API response is the source of displayed forecast values; no synthetic AQI defaults.
 	let selectedDayData = $derived(activeForecastItems[selectedIndex] || null);
@@ -172,8 +176,7 @@
 					<div class="absolute right-0 z-40 mt-2 max-h-72 w-full overflow-auto rounded-xl border border-zinc-200 bg-white p-1 shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
 						{#each matchingCities as city (city.id)}
 							<button type="button" onmousedown={(event) => event.preventDefault()} onclick={() => selectForecastCity(city)} class="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-emerald-50 dark:hover:bg-emerald-950/40">
-								<span class="font-semibold text-zinc-800 dark:text-zinc-100">{city.name}</span>
-								<span class="text-zinc-500">, {city.state}</span>
+								<span class="font-semibold text-zinc-800 dark:text-zinc-100">{cityLabel(city)}</span>
 							</button>
 						{:else}
 							<p class="px-3 py-2 text-sm text-zinc-500">{cityOptions.length ? 'No matching cities.' : 'Loading cities...'}</p>

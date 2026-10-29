@@ -22,11 +22,13 @@
 	/** @type {{ name?: string, email?: string } | null} */
 	let user = $state(null);
 	let visibleCities = $derived(cities.filter((city) => `${city.name} ${city.state}`.toLowerCase().includes(citySearch.toLowerCase())).slice(0, 30));
+	/** @param {{ name?: string, state?: string | null }} city */
+	const cityLabel = (city) => !city.name ? '' : city.state && city.state.toLowerCase() !== 'unknown' ? `${city.name}, ${city.state}` : city.name;
 
 	onMount(() => {
 		const onAuthChanged = () => { try { user = JSON.parse(localStorage.getItem('user') || 'null'); } catch { user = null; } };
 	/** @param {Event} event */
-	const onCitySelected = (event) => { const city = /** @type {CustomEvent<{ name?: string, state?: string }>} */ (event).detail; if (city?.name) currentCity = `${city.name}, ${city.state || ''}`.replace(/,\s*$/, ''); };
+		const onCitySelected = (event) => { const city = /** @type {CustomEvent<{ name?: string, state?: string }>} */ (event).detail; if (city?.name) currentCity = cityLabel(city); };
 		window.addEventListener('aeriq:auth-changed', onAuthChanged);
 		window.addEventListener('aeriq:city-selected', onCitySelected);
 		(async () => {
@@ -34,7 +36,7 @@
 			catch (error) { cityLoadError = error instanceof Error ? error.message : 'Unable to load cities.'; }
 			try { user = JSON.parse(localStorage.getItem('user') || 'null'); } catch { user = null; }
 			const savedCity = localStorage.getItem('selectedCity');
-			if (savedCity) { try { const city = JSON.parse(savedCity); currentCity = `${city.name}, ${city.state}`; } catch { /* ignore invalid cache */ } }
+			if (savedCity) { try { const city = JSON.parse(savedCity); currentCity = cityLabel(city); } catch { /* ignore invalid cache */ } }
 		})();
 		return () => {
 			window.removeEventListener('aeriq:auth-changed', onAuthChanged);
@@ -67,7 +69,7 @@
 	 * @param {{ id: string, name: string, state: string, latitude: number, longitude: number }} city
 	 */
 	function selectCity(city) {
-		currentCity = `${city.name}, ${city.state}`;
+		currentCity = cityLabel(city);
 		localStorage.setItem('selectedCity', JSON.stringify(city));
 		window.dispatchEvent(new CustomEvent('aeriq:city-selected', { detail: city }));
 		isCityDropdownOpen = false;
@@ -166,8 +168,8 @@
 							onclick={() => selectCity(city)}
 							class="w-full text-left px-3.5 py-2.5 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-zinc-100 flex items-center justify-between transition-colors"
 						>
-							<span>{city.name}, {city.state}</span>
-							{#if currentCity === `${city.name}, ${city.state}`}
+							<span>{cityLabel(city)}</span>
+							{#if currentCity === cityLabel(city)}
 								<svg class="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
 									<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
 								</svg>
