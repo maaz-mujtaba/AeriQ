@@ -72,6 +72,8 @@ export const predictCityAQI = (city) => apiRequest(`/predict/${encodeURIComponen
 /** @param {string} [search] */
 export const getCities = (search) => apiRequest(search ? `/cities?search=${encodeURIComponent(search)}&limit=20` : '/cities/all');
 export const getCurrentUser = () => apiRequest('/auth/me');
+/** @param {{ name: string, age: number, gender: string, city: string, vulnerabilities: string[] }} profile */
+export const updateCurrentUser = (profile) => apiRequest('/auth/me', { method: 'PUT', body: JSON.stringify(profile) });
 export const getModelStatus = () => apiRequest('/model/status');
 /** @param {string} city */
 export const assessHealthRisk = (city) => apiRequest('/health/assess', { method: 'POST', body: JSON.stringify({ city }) });

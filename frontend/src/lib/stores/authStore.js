@@ -20,6 +20,15 @@ export function login(session) {
 	loggedIn.set(true);
 }
 
+/** Keep the cached user details in step with a successful profile update. */
+/** @param {object} user */
+export function updateSessionUser(user) {
+	if (isBrowser) {
+		localStorage.setItem('user', JSON.stringify(user));
+		window.dispatchEvent(new Event('aeriq:auth-changed'));
+	}
+}
+
 /** Clear the local API session. */
 export function logout() {
 	if (isBrowser) {
