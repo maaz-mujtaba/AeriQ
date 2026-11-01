@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # AeriQ
 
@@ -11,7 +11,6 @@ An ML-powered platform that predicts AQI for 277 Indian cities and turns polluti
 ![scikit-learn](https://img.shields.io/badge/scikit--learn-1.3+-F7931E?style=flat&logo=scikit-learn&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-4169E1?style=flat&logo=postgresql&logoColor=white)
 ![SvelteKit](https://img.shields.io/badge/SvelteKit-FF3E00?style=flat&logo=svelte&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-green)
 
 </div>
 
@@ -48,7 +47,7 @@ Air pollution is a leading public-health burden in India, with an estimated 1.67
 AeriQ closes that gap with two components:
 
 1. **AQI forecasting.** A Random Forest regressor trained on hourly Open-Meteo data from 8 Indian cities.
-2. **Personalized health risk assessment.** A transparent, rule-based engine that computes a 0â€“100 risk score from a user's age, health vulnerabilities, and home-vs-destination AQI, then generates medication-planning and travel recommendations.
+2. **Personalized health risk assessment.** A transparent, rule-based engine that computes a 0–100 risk score from a user's age, health vulnerabilities, and home-vs-destination AQI, then generates medication-planning and travel recommendations.
 
 Everything is served through a FastAPI backend (JWT auth, PostgreSQL persistence) and a SvelteKit frontend.
 
@@ -59,7 +58,7 @@ Everything is served through a FastAPI backend (JWT auth, PostgreSQL persistence
 | Feature | Description |
 |---|---|
 | **AQI Prediction** | Random Forest forecast of AQI from lagged pollutant and weather features |
-| **Personalized Risk Score** | 0â€“100 score based on age, vulnerabilities, and home-city baseline |
+| **Personalized Risk Score** | 0–100 score based on age, vulnerabilities, and home-city baseline |
 | **City Comparison** | Side-by-side AQI comparison with an adaptation-gap analysis for travelers |
 | **277 Indian Cities** | City database with latitude/longitude coordinates |
 | **JWT Authentication** | Registration, login, and profile management |
@@ -72,17 +71,17 @@ Everything is served through a FastAPI backend (JWT auth, PostgreSQL persistence
 ## Architecture
 
 ```text
-â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”     â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”     â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚   Frontend   â”‚â”€â”€â”€â”€â–¶â”‚  FastAPI Backend  â”‚â”€â”€â”€â”€â–¶â”‚  Open-Meteo API    â”‚
-â”‚  (SvelteKit) â”‚â—€â”€â”€â”€â”€â”‚     (Python)      â”‚â—€â”€â”€â”€â”€â”‚  (air quality)     â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜     â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜     â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-                               â”‚
-              â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-              â–¼                â–¼                 â–¼
-     â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â” â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â” â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-     â”‚  ML Inference  â”‚ â”‚ Health Risk  â”‚ â”‚  PostgreSQL   â”‚
-     â”‚ (Random Forest)â”‚ â”‚ Engine (rules)â”‚ â”‚ (user data)   â”‚
-     â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜ â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜ â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+┌──────────────┐     ┌───────────────────┐     ┌────────────────────┐
+│   Frontend   │────▶│  FastAPI Backend  │────▶│  Open-Meteo API    │
+│  (SvelteKit) │◀────│     (Python)      │◀────│  (air quality)     │
+└──────────────┘     └─────────┬─────────┘     └────────────────────┘
+                               │
+              ┌────────────────┼─────────────────┐
+              ▼                ▼                 ▼
+     ┌────────────────┐ ┌──────────────┐ ┌───────────────┐
+     │  ML Inference  │ │ Health Risk  │ │  PostgreSQL   │
+     │ (Random Forest)│ │ Engine (rules)│ │ (user data)   │
+     └────────────────┘ └──────────────┘ └───────────────┘
 ```
 
 **Design principles**
@@ -102,8 +101,8 @@ Everything is served through a FastAPI backend (JWT auth, PostgreSQL persistence
 |---|---|
 | Source | [Open-Meteo Air Quality API](https://open-meteo.com/en/docs/air-quality-api) (free, no key) |
 | Cities | Delhi, Mumbai, Bengaluru, Chennai, Hyderabad, Kolkata, Pune, Ahmedabad |
-| Volume | 90 days of hourly data per city (8 Ã— 90 Ã— 24 = **17,280** records) |
-| Variables | PM2.5, PM10, NOâ‚‚, SOâ‚‚, Oâ‚ƒ, CO, temperature, humidity, wind speed |
+| Volume | 90 days of hourly data per city (8 × 90 × 24 = **17,280** records) |
+| Variables | PM2.5, PM10, NO₂, SO₂, O₃, CO, temperature, humidity, wind speed |
 
 > Open-Meteo values come from an atmospheric model (CAMS), not ground sensors. They are smoother and more predictable than station readings, so accuracy here should not be assumed to transfer to real monitors.
 
@@ -115,7 +114,7 @@ Everything is served through a FastAPI backend (JWT auth, PostgreSQL persistence
 | Lagged | `pm25_lag_{1,3,6,12,24}h` | Past pollution as a predictor |
 | Rolling | `pm25_rolling_{6,12,24}h` (past-only windows) | Trend and noise smoothing |
 | Difference | `pm25_diff_{1,3,6}h` | Rate of change |
-| Interaction | `temp_humidity`, `wind_pm25_ratio` | Weatherâ€“pollutant effects |
+| Interaction | `temp_humidity`, `wind_pm25_ratio` | Weather–pollutant effects |
 
 ### Leakage Prevention
 
@@ -123,8 +122,8 @@ AQI is derived from pollutant concentrations (PM2.5, PM10, and others), so any f
 
 - Features use only information available at prediction time `t`; the target is AQI at `t + h`.
 - Current-hour PM2.5 is excluded. Rolling windows are computed on past values only.
-- Because `lag + diff` can reconstruct the current value, differences are computed between lagged values (e.g. `lag_1 âˆ’ lag_2`), never against the current hour.
-- Current-hour PM10, NOâ‚‚, SOâ‚‚, Oâ‚ƒ, and CO are treated the same way, since AQI is the maximum of per-pollutant sub-indices.
+- Because `lag + diff` can reconstruct the current value, differences are computed between lagged values (e.g. `lag_1 − lag_2`), never against the current hour.
+- Current-hour PM10, NO₂, SO₂, O₃, and CO are treated the same way, since AQI is the maximum of per-pollutant sub-indices.
 
 ### Model
 
@@ -194,7 +193,7 @@ python train_model.py           # train the model (first run only)
 uvicorn app.main:app --reload
 ```
 
-API: <http://localhost:8000> Â· Docs: <http://localhost:8000/docs>
+API: <http://localhost:8000> · Docs: <http://localhost:8000/docs>
 
 ### Frontend
 
@@ -257,7 +256,7 @@ docker run -p 8000:8000 --env-file ./backend/.env aeriq-backend
 
 `prediction_source` is `ml_model` or `cpcb_fallback`, so clients can tell which path produced the value.
 
-CPCB categories: Good (0â€“50), Satisfactory (51â€“100), Moderate (101â€“200), Poor (201â€“300), Very Poor (301â€“400), Severe (401â€“500).
+CPCB categories: Good (0–50), Satisfactory (51–100), Moderate (101–200), Poor (201–300), Very Poor (301–400), Severe (401–500).
 
 ---
 
@@ -298,43 +297,43 @@ Current status: _add test count and coverage % here_.
 
 ```text
 AeriQ/
-â”œâ”€â”€ .github/workflows/        # CI pipelines (backend + frontend)
-â”œâ”€â”€ backend/
-â”‚   â”œâ”€â”€ app/
-â”‚   â”‚   â”œâ”€â”€ main.py           # FastAPI entrypoint
-â”‚   â”‚   â”œâ”€â”€ config.py         # Pydantic settings
-â”‚   â”‚   â”œâ”€â”€ database.py       # SQLAlchemy engine/session
-â”‚   â”‚   â”œâ”€â”€ db_models.py      # ORM models
-â”‚   â”‚   â”œâ”€â”€ models.py         # Pydantic schemas
-â”‚   â”‚   â”œâ”€â”€ auth.py           # JWT + password hashing
-â”‚   â”‚   â”œâ”€â”€ crud.py           # DB operations
-â”‚   â”‚   â”œâ”€â”€ cities.py         # City loader
-â”‚   â”‚   â”œâ”€â”€ openmeteo.py      # External API client
-â”‚   â”‚   â”œâ”€â”€ ml_model.py       # Model loading + inference
-â”‚   â”‚   â”œâ”€â”€ health_risk.py    # Risk scoring engine
-â”‚   â”‚   â””â”€â”€ routes.py         # API endpoints
-â”‚   â”œâ”€â”€ alembic/              # Database migrations
-â”‚   â”œâ”€â”€ data/city_coordinates.csv
-â”‚   â”œâ”€â”€ models/               # Trained model artifacts
-â”‚   â”œâ”€â”€ tests/
-â”‚   â”œâ”€â”€ train_model.py
-â”‚   â”œâ”€â”€ init_db.py
-â”‚   â”œâ”€â”€ requirements.txt
-â”‚   â”œâ”€â”€ Dockerfile
-â”‚   â””â”€â”€ render.yaml
-â”œâ”€â”€ frontend/
-â”‚   â”œâ”€â”€ src/
-â”‚   â”‚   â”œâ”€â”€ lib/              # API client, stores, components
-â”‚   â”‚   â””â”€â”€ routes/           # SvelteKit pages
-â”‚   â”œâ”€â”€ package.json
-â”‚   â”œâ”€â”€ tailwind.config.js
-â”‚   â””â”€â”€ vite.config.js
-â”œâ”€â”€ docs/
-â”‚   â”œâ”€â”€ api-contract.md
-â”‚   â”œâ”€â”€ architecture-diagram.png
-â”‚   â””â”€â”€ setup-guide.md
-â”œâ”€â”€ LICENSE
-â””â”€â”€ README.md
+├── .github/workflows/        # CI pipelines (backend + frontend)
+├── backend/
+│   ├── app/
+│   │   ├── main.py           # FastAPI entrypoint
+│   │   ├── config.py         # Pydantic settings
+│   │   ├── database.py       # SQLAlchemy engine/session
+│   │   ├── db_models.py      # ORM models
+│   │   ├── models.py         # Pydantic schemas
+│   │   ├── auth.py           # JWT + password hashing
+│   │   ├── crud.py           # DB operations
+│   │   ├── cities.py         # City loader
+│   │   ├── openmeteo.py      # External API client
+│   │   ├── ml_model.py       # Model loading + inference
+│   │   ├── health_risk.py    # Risk scoring engine
+│   │   └── routes.py         # API endpoints
+│   ├── alembic/              # Database migrations
+│   ├── data/city_coordinates.csv
+│   ├── models/               # Trained model artifacts
+│   ├── tests/
+│   ├── train_model.py
+│   ├── init_db.py
+│   ├── requirements.txt
+│   ├── Dockerfile
+│   └── render.yaml
+├── frontend/
+│   ├── src/
+│   │   ├── lib/              # API client, stores, components
+│   │   └── routes/           # SvelteKit pages
+│   ├── package.json
+│   ├── tailwind.config.js
+│   └── vite.config.js
+├── docs/
+│   ├── api-contract.md
+│   ├── architecture-diagram.png
+│   └── setup-guide.md
+├── LICENSE
+└── README.md
 ```
 
 ---
@@ -384,7 +383,7 @@ AeriQ/
 
 1. Open-Meteo, "Air Quality API Documentation." <https://open-meteo.com/en/docs/air-quality-api>
 2. Central Pollution Control Board, "National Air Quality Index." <https://cpcb.nic.in/National-Air-Quality-Index>
-3. L. Breiman, "Random Forests," *Machine Learning*, vol. 45, no. 1, pp. 5â€“32, 2001.
+3. L. Breiman, "Random Forests," *Machine Learning*, vol. 45, no. 1, pp. 5–32, 2001.
 4. FastAPI Documentation. <https://fastapi.tiangolo.com>
 5. Svelte Documentation. <https://svelte.dev/docs>
 6. Supabase Documentation. <https://supabase.com/docs>
