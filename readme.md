@@ -390,13 +390,13 @@ AeriQ/
 
 ## References
 
-1. Pandey, A. et al., "Health and economic impact of air pollution in the states of India: the Global Burden of Disease Study 2019," *The Lancet Planetary Health*, vol. 5, no. 1, pp. e25–e38, 2021.
-2. Open-Meteo, "Air Quality API Documentation." <https://open-meteo.com/en/docs/air-quality-api>
-3. Central Pollution Control Board, "National Air Quality Index." <https://cpcb.nic.in/National-Air-Quality-Index>
-4. L. Breiman, "Random Forests," *Machine Learning*, vol. 45, no. 1, pp. 5–32, 2001.
-5. FastAPI Documentation. <https://fastapi.tiangolo.com>
-6. Svelte Documentation. <https://svelte.dev/docs>
-7. Supabase Documentation. <https://supabase.com/docs>
+
+1. Open-Meteo, "Air Quality API Documentation." <https://open-meteo.com/en/docs/air-quality-api>
+2. Central Pollution Control Board, "National Air Quality Index." <https://cpcb.nic.in/National-Air-Quality-Index>
+3. L. Breiman, "Random Forests," *Machine Learning*, vol. 45, no. 1, pp. 5–32, 2001.
+4. FastAPI Documentation. <https://fastapi.tiangolo.com>
+5. Svelte Documentation. <https://svelte.dev/docs>
+6. Supabase Documentation. <https://supabase.com/docs>
 
 ---
 
